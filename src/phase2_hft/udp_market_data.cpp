@@ -75,7 +75,11 @@ void sender_thread(int port, long messages, int rate_us) {
             // Busy-wait for precise timing (usleep is too imprecise for HFT)
             uint64_t target = now_ns() + rate_us * 1000ULL;
             while (now_ns() < target) {
+#if defined(__x86_64__)
                 __asm__ volatile("pause" ::: "memory");
+#elif defined(__aarch64__)
+                __asm__ volatile("yield" ::: "memory");
+#endif
             }
         }
     }

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <chrono>
 #include <unistd.h>
+#include <sys/wait.h>
 #include <pthread.h>
 #include <sched.h>
 #include <cstring>
