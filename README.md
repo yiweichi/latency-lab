@@ -1,263 +1,260 @@
-# Latency Lab — Linux 性能观测实战
+# Latency Lab
 
-从 HFT / low-latency 视角，通过**同一组实验 + 多工具对照**深入掌握 perf / ftrace / bpftrace / VTune。
+Linux profiling lab: perf / ftrace / bpftrace / VTune experiments for low-latency systems.
 
-## 核心思想
+Learn by running the **same experiments through all four tools** and comparing what each one reveals.
 
-不是学命令，而是建立一套从用户态到硬件的完整性能观测体系：
+## Core Idea
+
+Build a mental model from userspace down to hardware:
 
 ```
-用户态代码 (C++)
+Userspace code (C++)
    ↓
-CPU执行 / cache / branch prediction
+CPU execution / cache / branch prediction
    ↓
-内核调度 / syscall / IRQ
+Kernel scheduling / syscall / IRQ
    ↓
-tracepoints / ftrace (内核内置追踪器)
+tracepoints / ftrace (kernel built-in tracer)
    ↓
-eBPF / bpftrace (动态内核编程)
+eBPF / bpftrace (dynamic kernel instrumentation)
    ↓
-perf (统一入口：计数器 + 采样 + 调度)
+perf (unified entry point: counters + sampling + scheduling)
    ↓
-VTune (硬件级微架构分析)
+VTune (hardware-level microarchitecture analysis)
 ```
 
-每个实验都用**全部四个工具**分析同一个程序，让你理解每个工具看到的是"真相的哪一层"。
+Each experiment analyzes the same program with all four tools, so you understand which layer of truth each tool exposes.
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 需要 Linux 环境 (perf/ftrace/bpftrace 都是 Linux 工具)
-# macOS 上需要 Linux VM 或 Docker
+# Requires Linux (perf/ftrace/bpftrace are Linux-only)
+# On macOS, use a Linux VM or Docker
 
-# 编译所有实验程序
-make all
-
-# 查看所有可用实验
-make help
-
-# 开始第一个实验
-scripts/perf/01_basic_stat.sh
+make all                          # build all experiment programs
+make help                         # list all available experiments
+scripts/perf/01_basic_stat.sh     # start the first experiment
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 latency-lab/
 ├── Makefile
 ├── README.md
 ├── src/
-│   ├── phase1/                    # 基础微基准测试
-│   │   ├── busy_loop.cpp          # 实验A：IPC / branch prediction
-│   │   ├── cache_miss.cpp         # 实验B：缓存层次结构
-│   │   ├── syscall_storm.cpp      # 实验C：系统调用开销
-│   │   ├── context_switch.cpp     # 实验D：上下文切换延迟
-│   │   └── false_sharing.cpp      # 实验E：缓存行伪共享
-│   └── phase2_hft/                # HFT 场景实验
-│       ├── orderbook.h            # 订单簿：map版 vs array版
-│       ├── orderbook_bench.cpp    # 订单簿基准测试
-│       └── udp_market_data.cpp    # UDP 行情接收延迟
+│   ├── phase1/                    # Microbenchmarks
+│   │   ├── busy_loop.cpp          # Exp A: IPC / branch prediction
+│   │   ├── cache_miss.cpp         # Exp B: cache hierarchy
+│   │   ├── syscall_storm.cpp      # Exp C: syscall overhead
+│   │   ├── context_switch.cpp     # Exp D: context switch latency
+│   │   └── false_sharing.cpp      # Exp E: cache line false sharing
+│   └── phase2_hft/                # HFT scenarios
+│       ├── orderbook.h            # Order book: map-based vs array-based
+│       ├── orderbook_bench.cpp    # Order book benchmark
+│       └── udp_market_data.cpp    # UDP market data receive latency
 ├── scripts/
-│   ├── perf/                      # Phase 1：perf 实验脚本
-│   │   ├── 01_basic_stat.sh       # 基础计数器：IPC / branch / cache
-│   │   ├── 02_cache_deep_dive.sh  # 缓存层次深度分析
-│   │   ├── 03_flamegraph.sh       # 火焰图生成
-│   │   ├── 04_scheduler.sh        # 调度器分析
-│   │   └── 05_syscall_analysis.sh # 系统调用开销对比
-│   ├── ftrace/                    # Phase 2：ftrace 实验脚本
-│   │   ├── 01_syscall_trace.sh    # 系统调用追踪
-│   │   ├── 02_sched_trace.sh      # 调度器追踪
-│   │   ├── 03_function_graph.sh   # 内核函数调用图
-│   │   └── 04_irq_trace.sh       # 中断追踪
-│   ├── bpftrace/                  # Phase 3：bpftrace 实验脚本
-│   │   ├── 01_syscall_latency.bt  # 系统调用延迟分布
-│   │   ├── 02_sched_snoop.bt      # 调度监听
-│   │   ├── 03_cache_line_bounce.bt # CPU迁移/缓存抖动检测
-│   │   ├── 04_network_latency.bt  # 网络栈延迟
-│   │   └── 05_wakeup_latency.bt   # 线程唤醒延迟
-│   ├── vtune/                     # Phase 4：VTune 实验脚本
-│   │   ├── 01_hotspot.sh          # 热点分析
-│   │   ├── 02_memory_access.sh    # 内存访问分析
-│   │   └── 03_topdown.sh          # Top-Down 微架构分析
-│   └── combined/                  # 综合实验
-│       ├── 01_four_tool_comparison.sh  # 四工具对照
-│       ├── 02_latency_spike_hunt.sh    # 延迟尖峰猎捕
-│       └── 03_hft_optimization_lab.sh  # HFT 优化实验室
-└── results/                       # 实验结果输出 (git ignored)
+│   ├── perf/                      # Phase 1: perf experiments
+│   │   ├── 01_basic_stat.sh       # Counters: IPC / branch / cache
+│   │   ├── 02_cache_deep_dive.sh  # Cache hierarchy deep dive
+│   │   ├── 03_flamegraph.sh       # Flame graph generation
+│   │   ├── 04_scheduler.sh        # Scheduler analysis
+│   │   └── 05_syscall_analysis.sh # Syscall cost comparison
+│   ├── ftrace/                    # Phase 2: ftrace experiments
+│   │   ├── 01_syscall_trace.sh    # Syscall tracing
+│   │   ├── 02_sched_trace.sh      # Scheduler tracing
+│   │   ├── 03_function_graph.sh   # Kernel function call graph
+│   │   └── 04_irq_trace.sh        # Interrupt tracing
+│   ├── bpftrace/                  # Phase 3: bpftrace experiments
+│   │   ├── 01_syscall_latency.bt  # Syscall latency distribution
+│   │   ├── 02_sched_snoop.bt      # Scheduler snooping
+│   │   ├── 03_cache_line_bounce.bt # CPU migration / cache bounce detection
+│   │   ├── 04_network_latency.bt  # Network stack latency
+│   │   └── 05_wakeup_latency.bt   # Thread wakeup latency
+│   ├── vtune/                     # Phase 4: VTune experiments
+│   │   ├── 01_hotspot.sh          # Hotspot analysis
+│   │   ├── 02_memory_access.sh    # Memory access analysis
+│   │   └── 03_topdown.sh          # Top-Down microarchitecture analysis
+│   └── combined/                  # Combined experiments
+│       ├── 01_four_tool_comparison.sh  # Same program, four tools
+│       ├── 02_latency_spike_hunt.sh    # Latency spike hunting
+│       └── 03_hft_optimization_lab.sh  # HFT optimization lab
+└── results/                       # Experiment output (git ignored)
 ```
 
-## 学习路线
+## Learning Path
 
-### 第 1 周：perf（打好基础）
+### Week 1: perf (foundation)
 
-| 实验 | 脚本 | 你要回答的问题 |
-|------|------|----------------|
-| IPC 基础 | `01_basic_stat.sh` | 什么是 IPC？为什么 busy loop 的 IPC 高？ |
-| Branch Miss | `01_basic_stat.sh` | 随机分支为什么导致 IPC 下降？ |
-| Cache 层次 | `02_cache_deep_dive.sh` | L1→L2→L3→DRAM 各级延迟差多少？ |
-| 火焰图 | `03_flamegraph.sh` | 火焰图的"宽度"代表什么？ |
-| 调度延迟 | `04_scheduler.sh` | context switch 一次花多少 us？ |
-| Syscall 开销 | `05_syscall_analysis.sh` | 最轻的 syscall 是哪个？VDSO 是什么？ |
+| Experiment | Script | Question to Answer |
+|------------|--------|--------------------|
+| IPC basics | `01_basic_stat.sh` | What is IPC? Why is the busy loop's IPC high? |
+| Branch miss | `01_basic_stat.sh` | Why do random branches cause IPC to drop? |
+| Cache hierarchy | `02_cache_deep_dive.sh` | What is the latency difference across L1→L2→L3→DRAM? |
+| Flame graphs | `03_flamegraph.sh` | What does the "width" of a flame graph represent? |
+| Scheduling latency | `04_scheduler.sh` | How many microseconds does one context switch cost? |
+| Syscall overhead | `05_syscall_analysis.sh` | Which syscall is cheapest? What is VDSO? |
 
-**关键理解：**
-- IPC < 1.0 = CPU 在等待（内存？分支？）
-- cache-miss rate > 5% = 数据结构需要优化
-- 火焰图的宽度 = CPU 时间占比
+**Key takeaways:**
+- IPC < 1.0 = CPU is stalling (memory? branch?)
+- cache-miss rate > 5% = data structure needs optimization
+- flame graph width = fraction of CPU time
 
-### 第 2 周：ftrace（看内核在干什么）
+### Week 2: ftrace (what the kernel is doing)
 
-| 实验 | 脚本 | 你要回答的问题 |
-|------|------|----------------|
-| Syscall 追踪 | `01_syscall_trace.sh` | 一个 read() 在内核里经过哪些函数？ |
-| 调度追踪 | `02_sched_trace.sh` | 谁抢了我的 CPU？ |
-| 函数图 | `03_function_graph.sh` | write() 的内核调用链有多深？ |
-| IRQ 追踪 | `04_irq_trace.sh` | 哪些中断在偷 CPU 时间？ |
+| Experiment | Script | Question to Answer |
+|------------|--------|--------------------|
+| Syscall trace | `01_syscall_trace.sh` | What kernel functions does a single read() pass through? |
+| Scheduler trace | `02_sched_trace.sh` | Who preempted my process? |
+| Function graph | `03_function_graph.sh` | How deep is the kernel call chain for write()? |
+| IRQ trace | `04_irq_trace.sh` | Which interrupts are stealing CPU time? |
 
-**关键理解：**
-- ftrace 是内核内置的，零额外开销
-- `sched_switch` 的 `prev_state` 告诉你为什么被切换
-- IRQ 是"隐形"延迟杀手
+**Key takeaways:**
+- ftrace is built into the kernel with near-zero overhead
+- `sched_switch` `prev_state` tells you why you were descheduled
+- IRQs are invisible latency killers
 
-### 第 3 周：bpftrace（动态内核编程）
+### Week 3: bpftrace (dynamic kernel instrumentation)
 
-| 实验 | 脚本 | 你要回答的问题 |
-|------|------|----------------|
-| Syscall 延迟分布 | `01_syscall_latency.bt` | read() 的延迟分布是什么形状？双峰？ |
-| 调度监听 | `02_sched_snoop.bt` | runqueue delay 的 p99 是多少？ |
-| 缓存抖动 | `03_cache_line_bounce.bt` | 我的进程被迁移了几次？ |
-| 网络延迟 | `04_network_latency.bt` | recvfrom() 延迟分布？NET_RX softirq 花多久？ |
-| 唤醒延迟 | `05_wakeup_latency.bt` | 线程唤醒到实际执行的延迟？ |
+| Experiment | Script | Question to Answer |
+|------------|--------|--------------------|
+| Syscall latency dist | `01_syscall_latency.bt` | What shape is the read() latency distribution? Bimodal? |
+| Scheduler snooping | `02_sched_snoop.bt` | What is the p99 runqueue delay? |
+| Cache line bounce | `03_cache_line_bounce.bt` | How many times was my process migrated? |
+| Network latency | `04_network_latency.bt` | recvfrom() latency distribution? NET_RX softirq duration? |
+| Wakeup latency | `05_wakeup_latency.bt` | Delay from thread wakeup to actual execution? |
 
-**关键理解：**
-- bpftrace 是"可编程的 ftrace"
-- 看分布比看平均值重要 100 倍
-- bimodal distribution = 有两条路径
+**Key takeaways:**
+- bpftrace is "programmable ftrace"
+- Distributions matter 100x more than averages
+- Bimodal distribution = two code paths
 
-### 第 4 周：VTune（硬件真相）
+### Week 4: VTune (hardware truth)
 
-| 实验 | 脚本 | 你要回答的问题 |
-|------|------|----------------|
-| Hotspot | `01_hotspot.sh` | 热点函数是哪个？热点源码行？ |
-| Memory Access | `02_memory_access.sh` | L1/L2/L3 命中率各是多少？ |
-| Top-Down | `03_topdown.sh` | Retiring / Bad Spec / FE / BE 各占多少？ |
+| Experiment | Script | Question to Answer |
+|------------|--------|--------------------|
+| Hotspot | `01_hotspot.sh` | Which function is the hotspot? Which source line? |
+| Memory access | `02_memory_access.sh` | What are the L1/L2/L3 hit rates? |
+| Top-Down | `03_topdown.sh` | What % is Retiring / Bad Spec / FE / BE Bound? |
 
-**关键理解 — Top-Down Microarchitecture Analysis (TMA)：**
+**Key concept — Top-Down Microarchitecture Analysis (TMA):**
 ```
 Pipeline Slots
-├── Retiring         (有效工作 — 越高越好)
-├── Bad Speculation  (分支预测失败 — 浪费的流水线)
-├── Frontend Bound   (取指/解码瓶颈 — 少见)
-└── Backend Bound    (执行/内存瓶颈 — HFT 最常见)
-    ├── Memory Bound   (等数据 — cache miss)
-    └── Core Bound     (执行单元不够)
+├── Retiring         (useful work — higher is better)
+├── Bad Speculation  (branch misprediction — wasted pipeline slots)
+├── Frontend Bound   (instruction fetch/decode bottleneck — rare)
+└── Backend Bound    (execution/memory stalls — most common in HFT)
+    ├── Memory Bound   (waiting for data — cache miss)
+    └── Core Bound     (not enough execution units)
 ```
 
-### 第 5 周：综合实战
+### Week 5: Combined Exercises
 
-| 实验 | 脚本 | 目标 |
-|------|------|------|
-| 四工具对照 | `01_four_tool_comparison.sh` | 同一程序，4 种视角 |
-| 延迟尖峰猎捕 | `02_latency_spike_hunt.sh` | 制造干扰，找到原因 |
-| HFT 优化实验室 | `03_hft_optimization_lab.sh` | 端到端优化流程 |
+| Experiment | Script | Goal |
+|------------|--------|------|
+| Four-tool comparison | `01_four_tool_comparison.sh` | Same program, four perspectives |
+| Latency spike hunt | `02_latency_spike_hunt.sh` | Inject noise, find the cause |
+| HFT optimization lab | `03_hft_optimization_lab.sh` | End-to-end optimization workflow |
 
-## 实验程序说明
+## Experiment Programs
 
-### Phase 1 微基准测试
+### Phase 1: Microbenchmarks
 
-每个程序都有多个 mode，通过命令行参数选择：
+Each program supports multiple modes via command-line arguments:
 
 ```bash
-# busy_loop: 测试 IPC 和 branch prediction
-./build/busy_loop 0          # mode 0: 可预测循环（高 IPC）
-./build/busy_loop 1          # mode 1: 可预测分支
-./build/busy_loop 2          # mode 2: 不可预测分支（branch miss 风暴）
+# busy_loop: IPC and branch prediction
+./build/busy_loop 0          # mode 0: predictable loop (high IPC)
+./build/busy_loop 1          # mode 1: predictable branch
+./build/busy_loop 2          # mode 2: unpredictable branch (branch miss storm)
 
-# cache_miss: 测试缓存层次
-./build/cache_miss 0 64      # mode 0: 顺序访问 64MB（prefetch 友好）
-./build/cache_miss 1 64      # mode 1: stride-64 跨步访问
-./build/cache_miss 2 64      # mode 2: 随机访问（cache miss 风暴）
-./build/cache_miss 3 64      # mode 3: 指针追踪（最差情况）
+# cache_miss: cache hierarchy
+./build/cache_miss 0 64      # mode 0: sequential 64MB (prefetch-friendly)
+./build/cache_miss 1 64      # mode 1: stride-64 access
+./build/cache_miss 2 64      # mode 2: random access (cache miss storm)
+./build/cache_miss 3 64      # mode 3: pointer chasing (worst case)
 
-# syscall_storm: 测试系统调用开销
-./build/syscall_storm 0      # getpid() — 最轻
+# syscall_storm: syscall overhead
+./build/syscall_storm 0      # getpid() — lightest
 ./build/syscall_storm 1      # clock_gettime() — VDSO
 ./build/syscall_storm 2      # read(/dev/null)
 ./build/syscall_storm 3      # write(/dev/null)
 
-# context_switch: 测试上下文切换
-./build/context_switch 0     # 线程 ping-pong，无 CPU 绑定
-./build/context_switch 1     # 同一 CPU（最差情况）
-./build/context_switch 2     # 不同 CPU
-./build/context_switch 3     # 进程 ping-pong + 延迟直方图
+# context_switch: context switch latency
+./build/context_switch 0     # thread ping-pong, no CPU pinning
+./build/context_switch 1     # same CPU (worst case)
+./build/context_switch 2     # different CPUs
+./build/context_switch 3     # process ping-pong + latency histogram
 
-# false_sharing: 测试伪共享
-./build/false_sharing        # 自动对比共享/填充两种版本
+# false_sharing: cache line contention
+./build/false_sharing        # auto-compares shared vs padded
 ```
 
-### Phase 2 HFT 实验
+### Phase 2: HFT Experiments
 
 ```bash
-# orderbook_bench: 订单簿基准测试
-./build/orderbook_bench 0    # std::map 版（树 = 指针追踪 = cache 不友好）
-./build/orderbook_bench 1    # array 版（连续内存 = cache 友好）
-./build/orderbook_bench 2    # 两版对比
+# orderbook_bench: order book benchmark
+./build/orderbook_bench 0    # std::map (tree = pointer chasing = cache-unfriendly)
+./build/orderbook_bench 1    # array-based (contiguous memory = cache-friendly)
+./build/orderbook_bench 2    # head-to-head comparison
 
-# udp_market_data: UDP 行情延迟测试
+# udp_market_data: UDP market data latency test
 ./build/udp_market_data 1000000 1 12345
-#                       消息数  间隔us  端口
+#                       msgs    interval_us  port
 ```
 
-## 环境要求
+## Requirements
 
-### 必需
-- Linux (kernel 4.18+, 建议 5.x+)
-- g++ 或 clang++ (C++17)
+### Required
+- Linux (kernel 4.18+, 5.x+ recommended)
+- g++ or clang++ (C++17)
 - perf (`linux-tools-$(uname -r)`)
 
-### 建议
-- bpftrace (`apt install bpftrace` 或 `dnf install bpftrace`)
-- stress-ng (用于延迟尖峰实验)
+### Recommended
+- bpftrace (`apt install bpftrace` or `dnf install bpftrace`)
+- stress-ng (for latency spike experiments)
 - FlameGraph tools (`git clone https://github.com/brendangregg/FlameGraph`)
 
-### 可选
-- Intel VTune (免费下载: https://www.intel.com/content/www/us/en/developer/tools/oneapi/vtune-profiler.html)
+### Optional
+- Intel VTune (free download: https://www.intel.com/content/www/us/en/developer/tools/oneapi/vtune-profiler.html)
 - trace-cmd (`apt install trace-cmd`)
 
-### 在 macOS 上使用
+### Running on macOS
 
-本项目的工具都是 Linux 专属的。建议：
+All tools in this project are Linux-only. Options:
 
 ```bash
-# 方案 1: Docker (最简单)
+# Option 1: Docker (simplest)
 docker run -it --privileged --pid=host \
   -v $(pwd):/work -w /work \
   ubuntu:22.04 bash
 
-# 容器内安装
+# Inside the container
 apt update && apt install -y g++ make linux-tools-generic bpftrace stress-ng
 
-# 方案 2: 云服务器
-# AWS c5.2xlarge / GCP n2-standard-8 都适合
-# 确保是裸金属或启用了 PMU 访问
+# Option 2: Cloud server
+# AWS c5.2xlarge / GCP n2-standard-8 work well
+# Ensure bare-metal or PMU access is enabled
 ```
 
-## 编译选项解释
+## Compiler Flags
 
 ```makefile
 CXXFLAGS := -std=c++17 -O2 -g -Wall
-# -O2: 优化后的代码才有意义做 profiling（-O0 结果没有参考价值）
-# -g:  保留调试符号（perf/VTune 需要它来显示源码行）
+# -O2: only optimized code gives meaningful profiling results (-O0 is useless)
+# -g:  debug symbols are required for perf/VTune to show source lines
 
 CXXFLAGS += -fno-omit-frame-pointer
-# 关键! 没有这个，perf 的 --call-graph fp 模式无法获取调用链
-# 很多性能问题需要看调用链才能定位
+# Critical! Without this, perf --call-graph fp cannot capture call stacks.
+# Many performance issues require call chains to diagnose.
 ```
 
-## 学完之后
+## After Completing All Experiments
 
-如果你完成了所有实验，你应该能够：
+You should be able to:
 
-1. **看到数字就知道问题** — IPC < 1? 一定是 memory bound 或 branch miss
-2. **用正确的工具** — 想看分布用 bpftrace，想看调用链用 perf，想看内核路径用 ftrace
-3. **解释 tail latency** — p99 spike 是 context switch？IRQ？cache miss？migration？
-4. **做 HFT 级优化** — isolcpus, IRQ affinity, busy-polling, 数据结构 cache-friendly 改造
+1. **Read the numbers, know the problem** — IPC < 1? Must be memory bound or branch miss.
+2. **Pick the right tool** — distributions → bpftrace, call stacks → perf, kernel paths → ftrace.
+3. **Explain tail latency** — is the p99 spike from a context switch? IRQ? cache miss? migration?
+4. **Apply HFT-grade tuning** — isolcpus, IRQ affinity, busy-polling, cache-friendly data structures.
