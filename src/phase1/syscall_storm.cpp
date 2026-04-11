@@ -41,7 +41,7 @@ void __attribute__((noinline)) syscall_read_devnull(long iterations) {
     }
     char buf[1];
     for (long i = 0; i < iterations; i++) {
-        read(fd, buf, 1);
+        (void)read(fd, buf, 1);
     }
     close(fd);
 }
@@ -54,7 +54,7 @@ void __attribute__((noinline)) syscall_write_devnull(long iterations) {
     }
     char buf[1] = {'x'};
     for (long i = 0; i < iterations; i++) {
-        write(fd, buf, 1);
+        (void)write(fd, buf, 1);
     }
     close(fd);
 }
@@ -73,7 +73,7 @@ void __attribute__((noinline)) mixed_compute_and_syscall(long iterations) {
         // Some compute
         for (int j = 0; j < 100; j++) sink += j;
         // Then a syscall
-        write(fd, buf, 1);
+        (void)write(fd, buf, 1);
     }
     close(fd);
 }

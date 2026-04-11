@@ -47,8 +47,8 @@ void* ping_thread(void* arg) {
 
     char buf = 'p';
     for (long i = 0; i < args->iterations; i++) {
-        write(args->write_fd, &buf, 1);
-        read(args->read_fd, &buf, 1);
+        (void)write(args->write_fd, &buf, 1);
+        (void)read(args->read_fd, &buf, 1);
     }
     return nullptr;
 }
@@ -59,16 +59,16 @@ void* pong_thread(void* arg) {
 
     char buf;
     for (long i = 0; i < args->iterations; i++) {
-        read(args->read_fd, &buf, 1);
-        write(args->write_fd, &buf, 1);
+        (void)read(args->read_fd, &buf, 1);
+        (void)write(args->write_fd, &buf, 1);
     }
     return nullptr;
 }
 
 void measure_pipe_context_switch(long iterations, int ping_cpu, int pong_cpu) {
     int pipe1[2], pipe2[2];
-    pipe(pipe1);  // ping writes, pong reads
-    pipe(pipe2);  // pong writes, ping reads
+    (void)pipe(pipe1);
+    (void)pipe(pipe2);
 
     ThreadArgs ping_args = {pipe2[0], pipe1[1], iterations, ping_cpu};
     ThreadArgs pong_args = {pipe1[0], pipe2[1], iterations, pong_cpu};
@@ -99,8 +99,8 @@ void measure_pipe_context_switch(long iterations, int ping_cpu, int pong_cpu) {
 
 void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
     int pipe1[2], pipe2[2];
-    pipe(pipe1);
-    pipe(pipe2);
+    (void)pipe(pipe1);
+    (void)pipe(pipe2);
 
     std::vector<double> latencies;
     latencies.reserve(iterations);
@@ -115,8 +115,8 @@ void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
         if (pong_cpu >= 0) pin_to_cpu(pong_cpu);
         char buf;
         for (long i = 0; i < iterations; i++) {
-            read(pipe1[0], &buf, 1);
-            write(pipe2[1], &buf, 1);
+            (void)read(pipe1[0], &buf, 1);
+            (void)write(pipe2[1], &buf, 1);
         }
         close(pipe1[0]); close(pipe2[1]);
         _exit(0);
@@ -128,8 +128,8 @@ void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
 
     for (long i = 0; i < iterations; i++) {
         auto t0 = std::chrono::high_resolution_clock::now();
-        write(pipe1[1], &buf, 1);
-        read(pipe2[0], &buf, 1);
+        (void)write(pipe1[1], &buf, 1);
+        (void)read(pipe2[0], &buf, 1);
         auto t1 = std::chrono::high_resolution_clock::now();
         latencies.push_back(std::chrono::duration<double, std::nano>(t1 - t0).count());
     }
