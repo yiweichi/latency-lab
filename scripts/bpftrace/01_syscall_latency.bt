@@ -1,0 +1,56 @@
+#!/usr/bin/env bpftrace
+// ============================================================================
+// bpftrace Experiment 1: Syscall Latency Distribution
+// ============================================================================
+// Goal: Measure the latency distribution of read() and write() syscalls
+//
+// What to observe:
+//   - The histogram shows latency buckets (power of 2)
+//   - Most syscalls cluster in a narrow range
+//   - Outliers (tail latency) reveal system interference
+//
+// Usage: sudo bpftrace 01_syscall_latency.bt
+//        (then run your program in another terminal)
+//
+// Key insight: The SHAPE of the distribution matters more than the mean.
+//              A bimodal distribution = some syscalls hit a slow path.
+// ============================================================================
+
+tracepoint:syscalls:sys_enter_read
+{
+    @read_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_read
+/@read_start[tid]/
+{
+    $delta = nsecs - @read_start[tid];
+    @read_latency_ns = hist($delta);
+    @read_count = count();
+    delete(@read_start[tid]);
+}
+
+tracepoint:syscalls:sys_enter_write
+{
+    @write_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_write
+/@write_start[tid]/
+{
+    $delta = nsecs - @write_start[tid];
+    @write_latency_ns = hist($delta);
+    @write_count = count();
+    delete(@write_start[tid]);
+}
+
+END
+{
+    printf("\n=== Syscall Latency Summary ===\n");
+    printf("Read calls:  ");
+    print(@read_count);
+    printf("Write calls: ");
+    print(@write_count);
+    clear(@read_start);
+    clear(@write_start);
+}

@@ -1,0 +1,47 @@
+#!/usr/bin/env bpftrace
+// ============================================================================
+// bpftrace Experiment 3: CPU Migration and Cache Effects
+// ============================================================================
+// Goal: Detect when processes migrate between CPUs (cache line bouncing)
+//
+// What to observe:
+//   - Each migration = cold cache = latency spike
+//   - Frequency of migrations for your process
+//   - Which CPUs are involved
+//
+// Usage: sudo bpftrace 03_cache_line_bounce.bt
+//
+// Key insight: Cache line bouncing happens when:
+//   1. Your thread migrates between CPUs (L1/L2 cache is per-core)
+//   2. Two threads on different CPUs write to the same cache line (false sharing)
+//   Both cause MESI protocol invalidations and are invisible without tracing.
+// ============================================================================
+
+tracepoint:sched:sched_migrate_task
+{
+    @migrations_by_process[args->comm] = count();
+    @migration_paths[args->orig_cpu, args->dest_cpu] = count();
+
+    printf("[%llu] %s (pid=%d): CPU %d -> %d\n",
+           nsecs / 1000000,  // ms timestamp
+           args->comm, args->pid,
+           args->orig_cpu, args->dest_cpu);
+}
+
+// Track context switches per CPU
+tracepoint:sched:sched_switch
+{
+    @switches_per_cpu[cpu] = count();
+    @switch_pairs[args->prev_comm, args->next_comm] = count();
+}
+
+interval:s:10
+{
+    printf("\n=== 10-second report ===\n");
+    printf("\nMigrations by process:\n");
+    print(@migrations_by_process, 10);
+    printf("\nMigration paths (from_cpu -> to_cpu):\n");
+    print(@migration_paths, 10);
+    printf("\nSwitches per CPU:\n");
+    print(@switches_per_cpu);
+}

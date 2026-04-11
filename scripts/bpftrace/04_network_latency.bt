@@ -1,0 +1,80 @@
+#!/usr/bin/env bpftrace
+// ============================================================================
+// bpftrace Experiment 4: Network Stack Latency
+// ============================================================================
+// Goal: Trace the latency through the kernel network stack
+//
+// What to observe:
+//   - Time from packet arrival to userspace delivery
+//   - recvfrom/sendto syscall latency
+//   - Softirq processing time (NET_RX)
+//
+// Usage: sudo bpftrace 04_network_latency.bt
+//        (then run udp_market_data in another terminal)
+//
+// Key insight: For HFT, the kernel network stack adds 5-50us.
+//              This is why firms use kernel bypass (DPDK, Solarflare OpenOnload).
+// ============================================================================
+
+// Track recvfrom() latency (UDP receive)
+tracepoint:syscalls:sys_enter_recvfrom
+{
+    @recv_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_recvfrom
+/@recv_start[tid]/
+{
+    $delta = nsecs - @recv_start[tid];
+    @recvfrom_latency_us = hist($delta / 1000);  // in microseconds
+    @recv_count = count();
+    delete(@recv_start[tid]);
+}
+
+// Track sendto() latency (UDP send)
+tracepoint:syscalls:sys_enter_sendto
+{
+    @send_start[tid] = nsecs;
+}
+
+tracepoint:syscalls:sys_exit_sendto
+/@send_start[tid]/
+{
+    $delta = nsecs - @send_start[tid];
+    @sendto_latency_us = hist($delta / 1000);
+    @send_count = count();
+    delete(@send_start[tid]);
+}
+
+// Track NET_RX softirq
+tracepoint:irq:softirq_entry
+/args->vec == 3/  // NET_RX = 3
+{
+    @netrx_start[cpu] = nsecs;
+}
+
+tracepoint:irq:softirq_exit
+/args->vec == 3 && @netrx_start[cpu]/
+{
+    $delta = nsecs - @netrx_start[cpu];
+    @netrx_latency_us = hist($delta / 1000);
+    delete(@netrx_start[cpu]);
+}
+
+interval:s:5
+{
+    printf("\n--- Network latency snapshot ---\n");
+    printf("recvfrom() latency (us):\n");
+    print(@recvfrom_latency_us);
+    printf("sendto() latency (us):\n");
+    print(@sendto_latency_us);
+    printf("NET_RX softirq (us):\n");
+    print(@netrx_latency_us);
+}
+
+END
+{
+    clear(@recv_start);
+    clear(@send_start);
+    clear(@netrx_start);
+}

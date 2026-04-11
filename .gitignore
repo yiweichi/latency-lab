@@ -1,0 +1,7 @@
+build/
+results/
+*.perf.data
+*.perf.data.old
+*.perf.script
+*.folded
+*.svg

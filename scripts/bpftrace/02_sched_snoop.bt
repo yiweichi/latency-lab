@@ -1,0 +1,68 @@
+#!/usr/bin/env bpftrace
+// ============================================================================
+// bpftrace Experiment 2: Scheduler Snooping
+// ============================================================================
+// Goal: See who is preempting your process and measure scheduling delay
+//
+// What to observe:
+//   - Which processes are taking CPU from you
+//   - How long your process waits in the runqueue
+//   - Migration between CPUs
+//
+// Usage: sudo bpftrace 02_sched_snoop.bt
+//
+// Key insight: In HFT, you want to see ZERO sched_switch events for your
+//              trading thread. Any switch = latency spike.
+// ============================================================================
+
+tracepoint:sched:sched_switch
+{
+    // Record when a process is switched OUT
+    if (args->prev_pid != 0) {
+        @switch_out[args->prev_comm] = count();
+    }
+
+    // Record when a process is switched IN
+    if (args->next_pid != 0) {
+        @switch_in[args->next_comm] = count();
+    }
+
+    // Track CPU usage per process
+    @cpu_usage[args->next_comm, cpu] = count();
+}
+
+tracepoint:sched:sched_wakeup
+{
+    @wakeup_time[args->pid] = nsecs;
+}
+
+tracepoint:sched:sched_switch
+/@wakeup_time[args->next_pid]/
+{
+    $delay = nsecs - @wakeup_time[args->next_pid];
+    @runqueue_delay_ns = hist($delay);
+    delete(@wakeup_time[args->next_pid]);
+}
+
+tracepoint:sched:sched_migrate_task
+{
+    printf("MIGRATION: %s (pid=%d) cpu %d -> %d\n",
+           args->comm, args->pid, args->orig_cpu, args->dest_cpu);
+    @migrations[args->comm] = count();
+}
+
+interval:s:5
+{
+    printf("\n--- 5-second snapshot ---\n");
+    printf("Top processes switched in:\n");
+    print(@switch_in, 10);
+    printf("\nTop processes switched out:\n");
+    print(@switch_out, 10);
+    printf("\nRunqueue delay distribution:\n");
+    print(@runqueue_delay_ns);
+}
+
+END
+{
+    clear(@wakeup_time);
+}

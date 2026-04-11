@@ -1,0 +1,62 @@
+#!/usr/bin/env bpftrace
+// ============================================================================
+// bpftrace Experiment 5: Thread Wakeup Latency
+// ============================================================================
+// Goal: Measure the delay between wakeup signal and actual execution
+//
+// What to observe:
+//   - Time from sched_wakeup to sched_switch (= runqueue delay)
+//   - This is the OS scheduling overhead
+//   - In HFT, this directly impacts your tick-to-trade latency
+//
+// Usage: sudo bpftrace 05_wakeup_latency.bt
+//
+// Key insight: Even with isolcpus, wakeup latency can be 1-10us.
+//              With busy-polling, you avoid this entirely but waste CPU.
+//              Most HFT systems use busy-polling for this reason.
+// ============================================================================
+
+tracepoint:sched:sched_wakeup
+{
+    @wakeup[args->pid] = nsecs;
+}
+
+tracepoint:sched:sched_wakeup_new
+{
+    @wakeup[args->pid] = nsecs;
+}
+
+tracepoint:sched:sched_switch
+/@wakeup[args->next_pid]/
+{
+    $delay_ns = nsecs - @wakeup[args->next_pid];
+    $delay_us = $delay_ns / 1000;
+
+    @latency_us = hist($delay_us);
+    @latency_by_process[args->next_comm] = hist($delay_us);
+
+    // Alert on high latency (>100us)
+    if ($delay_us > 100) {
+        printf("HIGH LATENCY: %s (pid=%d) waited %llu us on cpu %d\n",
+               args->next_comm, args->next_pid, $delay_us, cpu);
+    }
+
+    @total_wakeups = count();
+    delete(@wakeup[args->next_pid]);
+}
+
+interval:s:10
+{
+    printf("\n=== Wakeup Latency Report ===\n");
+    printf("Overall distribution (us):\n");
+    print(@latency_us);
+    printf("\nTotal wakeups:\n");
+    print(@total_wakeups);
+}
+
+END
+{
+    printf("\n=== Final Per-Process Wakeup Latency ===\n");
+    print(@latency_by_process);
+    clear(@wakeup);
+}
