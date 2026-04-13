@@ -31,7 +31,7 @@ void __attribute__((noinline)) sequential_access(int* arr, int n, int rounds) {
 void __attribute__((noinline)) stride_access(int* arr, int n, int stride, int rounds) {
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < n; i += stride) {
-            arr[i] += 1;
+            sink += arr[i];
         }
     }
 }
