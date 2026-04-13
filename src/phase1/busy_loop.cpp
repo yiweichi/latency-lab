@@ -79,15 +79,15 @@ int main(int argc, char* argv[]) {
             printf("[Mode 2] Unpredictable branch — branch miss storm\n");
             hot_loop_unpredictable(iterations);
             break;
-        case 4:
+        case 3:
             // threshold=0: state is always > 0 (xorshift never produces 0),
             // so the branch is ~100% predictable. But the compiler doesn't
             // know that, so it keeps both paths and the branch instruction.
-            printf("[Mode 4] Predictable branch — same xorshift work as mode 2\n");
+            printf("[Mode 3] Predictable branch — same xorshift work as mode 2\n");
             hot_loop_predictable_same_work(iterations, 0);
             break;
         default:
-            printf("Usage: %s [0|1|2|3|4] [iterations]\n", argv[0]);
+            printf("Usage: %s [0|1|2|3] [iterations]\n", argv[0]);
             return 1;
     }
 
