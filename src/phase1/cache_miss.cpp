@@ -36,6 +36,20 @@ void __attribute__((noinline)) stride_access(int* arr, int n, int stride, int ro
     }
 }
 
+// Stride by cache line, but read all 16 ints within each line.
+// Same total loads as sequential, same cache lines touched as stride.
+// Isolates: does reading the full cache line help the prefetcher?
+void __attribute__((noinline)) stride_access_full_line(int* arr, int n, int rounds) {
+    for (int r = 0; r < rounds; r++) {
+        for (int i = 0; i < n; i += 16) {
+            sink += arr[i] + arr[i+1] + arr[i+2] + arr[i+3]
+                  + arr[i+4] + arr[i+5] + arr[i+6] + arr[i+7]
+                  + arr[i+8] + arr[i+9] + arr[i+10] + arr[i+11]
+                  + arr[i+12] + arr[i+13] + arr[i+14] + arr[i+15];
+        }
+    }
+}
+
 void __attribute__((noinline)) random_access(int* arr, int* indices, int count, int rounds) {
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < count; i++) {
@@ -83,7 +97,13 @@ int main(int argc, char* argv[]) {
             break;
         }
         case 2: {
-            printf("[Mode 2] Random access — cache miss storm\n");
+            printf("[Mode 2] Stride-64 + read full cache line — same loads as mode 0\n");
+            printf("Array size: %d MB\n", size_mb);
+            stride_access_full_line(arr, N, 4);
+            break;
+        }
+        case 3: {
+            printf("[Mode 3] Random access — cache miss storm\n");
             printf("Array size: %d MB\n", size_mb);
 
             int count = N / 16;
@@ -96,8 +116,8 @@ int main(int argc, char* argv[]) {
             delete[] indices;
             break;
         }
-        case 3: {
-            printf("[Mode 3] Pointer chase — worst case, no prefetch possible\n");
+        case 4: {
+            printf("[Mode 4] Pointer chase — worst case, no prefetch possible\n");
             printf("Array size: %d MB\n", size_mb);
 
             // Build a random permutation for pointer chasing
@@ -115,7 +135,7 @@ int main(int argc, char* argv[]) {
             break;
         }
         default:
-            printf("Usage: %s [0|1|2|3] [size_mb]\n", argv[0]);
+            printf("Usage: %s [0|1|2|3|4] [size_mb]\n", argv[0]);
             delete[] arr;
             return 1;
     }
