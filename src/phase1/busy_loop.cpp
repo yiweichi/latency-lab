@@ -41,6 +41,21 @@ void __attribute__((noinline)) hot_loop_unpredictable(long iterations) {
     }
 }
 
+// Same xorshift computation, but branch is always-true (predictable).
+// Identical instruction count to mode 2, isolating branch-miss cost.
+void __attribute__((noinline)) hot_loop_predictable_same_work(long iterations) {
+    unsigned int state = 12345;
+    for (long i = 0; i < iterations; i++) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        if (state | 1)  // always true: bit-OR, not bit-AND
+            sink += i;
+        else
+            sink -= i;
+    }
+}
+
 int main(int argc, char* argv[]) {
     long iterations = 1'000'000'000L;
     int mode = 0;
@@ -63,8 +78,12 @@ int main(int argc, char* argv[]) {
             printf("[Mode 2] Unpredictable branch — branch miss storm\n");
             hot_loop_unpredictable(iterations);
             break;
+        case 4:
+            printf("[Mode 4] Predictable branch — same xorshift work as mode 2\n");
+            hot_loop_predictable_same_work(iterations);
+            break;
         default:
-            printf("Usage: %s [0|1|2] [iterations]\n", argv[0]);
+            printf("Usage: %s [0|1|2|3|4] [iterations]\n", argv[0]);
             return 1;
     }
 
