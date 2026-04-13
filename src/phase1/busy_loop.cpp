@@ -41,15 +41,16 @@ void __attribute__((noinline)) hot_loop_unpredictable(long iterations) {
     }
 }
 
-// Same xorshift computation, but branch is always-true (predictable).
-// Identical instruction count to mode 2, isolating branch-miss cost.
-void __attribute__((noinline)) hot_loop_predictable_same_work(long iterations) {
+// Same xorshift + same branch instruction as mode 2, but the branch
+// direction is heavily biased (~99.99% one way) so the predictor nails it.
+// Compiler can't optimize away the branch because threshold comes from argv.
+void __attribute__((noinline)) hot_loop_predictable_same_work(long iterations, unsigned int threshold) {
     unsigned int state = 12345;
     for (long i = 0; i < iterations; i++) {
         state ^= state << 13;
         state ^= state >> 17;
         state ^= state << 5;
-        if (state | 1)  // always true: bit-OR, not bit-AND
+        if (state > threshold)
             sink += i;
         else
             sink -= i;
@@ -79,8 +80,11 @@ int main(int argc, char* argv[]) {
             hot_loop_unpredictable(iterations);
             break;
         case 4:
+            // threshold=0: state is always > 0 (xorshift never produces 0),
+            // so the branch is ~100% predictable. But the compiler doesn't
+            // know that, so it keeps both paths and the branch instruction.
             printf("[Mode 4] Predictable branch — same xorshift work as mode 2\n");
-            hot_loop_predictable_same_work(iterations);
+            hot_loop_predictable_same_work(iterations, 0);
             break;
         default:
             printf("Usage: %s [0|1|2|3|4] [iterations]\n", argv[0]);
