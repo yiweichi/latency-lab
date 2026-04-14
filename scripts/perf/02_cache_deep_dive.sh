@@ -40,7 +40,10 @@ echo "====================================================="
 for SIZE_MB in 1 4 16 64; do
     echo ""
     echo "--- Pointer chase: ${SIZE_MB} MB ---"
-    perf stat -e cycles,instructions,L1-dcache-load-misses,LLC-load-misses \
+    perf stat -e \
+        cycles,instructions,\
+L1-dcache-loads,L1-dcache-load-misses,\
+LLC-loads,LLC-load-misses \
         "$BIN_DIR/cache_miss" 4 "$SIZE_MB" 2>&1
 done
 

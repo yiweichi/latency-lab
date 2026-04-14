@@ -200,11 +200,11 @@ int main(int argc, char* argv[]) {
             break;
         case 1:
             printf("[Mode 1] Thread ping-pong — same CPU (worst case)\n");
-            measure_pipe_context_switch(iterations, 0, 0);
+            measure_pipe_context_switch(iterations, 1, 1);
             break;
         case 2:
             printf("[Mode 2] Thread ping-pong — different CPUs\n");
-            measure_pipe_context_switch(iterations, 0, 1);
+            measure_pipe_context_switch(iterations, 1, 2);
             break;
         case 3:
             printf("[Mode 3] Process ping-pong with latency histogram\n");
