@@ -13,8 +13,20 @@
 #include <cstring>
 #include <chrono>
 #include <pthread.h>
+#include <sched.h>
 #include <thread>
 #include <vector>
+
+static void pin_to_cpu(int cpu) {
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+    pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+#else
+    (void)cpu;
+#endif
+}
 
 struct SharedCounters {
     volatile long counter1;
@@ -34,12 +46,15 @@ template<typename T>
 struct WorkerArgs {
     T* counters;
     int thread_id;
+    int cpu_id;
     long iterations;
 };
 
 template<typename T>
 void* worker(void* arg) {
     auto* args = static_cast<WorkerArgs<T>*>(arg);
+    if (args->cpu_id >= 0)
+        pin_to_cpu(args->cpu_id);
     volatile long* counter = (args->thread_id == 0) ?
         &args->counters->counter1 : &args->counters->counter2;
 
@@ -50,11 +65,11 @@ void* worker(void* arg) {
 }
 
 template<typename T>
-double run_test(long iterations) {
+double run_test(long iterations, int cpu0 = 0, int cpu1 = 1) {
     alignas(64) T counters = {};
 
-    WorkerArgs<T> args1 = {&counters, 0, iterations};
-    WorkerArgs<T> args2 = {&counters, 1, iterations};
+    WorkerArgs<T> args1 = {&counters, 0, cpu0, iterations};
+    WorkerArgs<T> args2 = {&counters, 1, cpu1, iterations};
 
     pthread_t t1, t2;
 
