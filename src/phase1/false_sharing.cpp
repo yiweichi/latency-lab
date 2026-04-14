@@ -51,7 +51,7 @@ void* worker(void* arg) {
 
 template<typename T>
 double run_test(long iterations) {
-    T counters = {};
+    alignas(64) T counters = {};
 
     WorkerArgs<T> args1 = {&counters, 0, iterations};
     WorkerArgs<T> args2 = {&counters, 1, iterations};
@@ -132,7 +132,7 @@ int main(int argc, char* argv[]) {
     printf("Slowdown factor:      %.2fx\n", shared_ms / padded_ms);
 
     printf("\n--- Single-threaded baseline ---\n");
-    SharedCounters sc = {};
+    alignas(64) SharedCounters sc = {};
     auto start = std::chrono::high_resolution_clock::now();
     for (long i = 0; i < iterations * 2; i++) sc.counter1++;
     auto end = std::chrono::high_resolution_clock::now();
