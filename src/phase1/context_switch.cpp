@@ -21,6 +21,17 @@
 #include <vector>
 #include <cmath>
 
+// Satisfies glibc warn_unused_result; errors would skew the benchmark anyway.
+static inline void io_byte(ssize_t n) {
+    if (n < 0)
+        perror("read/write");
+}
+
+static inline void io_pipe(int rc) {
+    if (rc != 0)
+        perror("pipe");
+}
+
 struct ThreadArgs {
     int read_fd;
     int write_fd;
@@ -47,8 +58,8 @@ void* ping_thread(void* arg) {
 
     char buf = 'p';
     for (long i = 0; i < args->iterations; i++) {
-        (void)write(args->write_fd, &buf, 1);
-        (void)read(args->read_fd, &buf, 1);
+        io_byte(write(args->write_fd, &buf, 1));
+        io_byte(read(args->read_fd, &buf, 1));
     }
     return nullptr;
 }
@@ -59,16 +70,16 @@ void* pong_thread(void* arg) {
 
     char buf;
     for (long i = 0; i < args->iterations; i++) {
-        (void)read(args->read_fd, &buf, 1);
-        (void)write(args->write_fd, &buf, 1);
+        io_byte(read(args->read_fd, &buf, 1));
+        io_byte(write(args->write_fd, &buf, 1));
     }
     return nullptr;
 }
 
 void measure_pipe_context_switch(long iterations, int ping_cpu, int pong_cpu) {
     int pipe1[2], pipe2[2];
-    (void)pipe(pipe1);
-    (void)pipe(pipe2);
+    io_pipe(pipe(pipe1));
+    io_pipe(pipe(pipe2));
 
     ThreadArgs ping_args = {pipe2[0], pipe1[1], iterations, ping_cpu};
     ThreadArgs pong_args = {pipe1[0], pipe2[1], iterations, pong_cpu};
@@ -99,8 +110,8 @@ void measure_pipe_context_switch(long iterations, int ping_cpu, int pong_cpu) {
 
 void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
     int pipe1[2], pipe2[2];
-    (void)pipe(pipe1);
-    (void)pipe(pipe2);
+    io_pipe(pipe(pipe1));
+    io_pipe(pipe(pipe2));
 
     std::vector<double> latencies;
     latencies.reserve(iterations);
@@ -115,8 +126,8 @@ void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
         if (pong_cpu >= 0) pin_to_cpu(pong_cpu);
         char buf;
         for (long i = 0; i < iterations; i++) {
-            (void)read(pipe1[0], &buf, 1);
-            (void)write(pipe2[1], &buf, 1);
+            io_byte(read(pipe1[0], &buf, 1));
+            io_byte(write(pipe2[1], &buf, 1));
         }
         close(pipe1[0]); close(pipe2[1]);
         _exit(0);
@@ -128,8 +139,8 @@ void measure_with_histogram(long iterations, int ping_cpu, int pong_cpu) {
 
     for (long i = 0; i < iterations; i++) {
         auto t0 = std::chrono::high_resolution_clock::now();
-        (void)write(pipe1[1], &buf, 1);
-        (void)read(pipe2[0], &buf, 1);
+        io_byte(write(pipe1[1], &buf, 1));
+        io_byte(read(pipe2[0], &buf, 1));
         auto t1 = std::chrono::high_resolution_clock::now();
         latencies.push_back(std::chrono::duration<double, std::nano>(t1 - t0).count());
     }
