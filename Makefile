@@ -17,7 +17,8 @@ PHASE1_TARGETS := \
 	$(BUILD_DIR)/cache_miss \
 	$(BUILD_DIR)/syscall_storm \
 	$(BUILD_DIR)/context_switch \
-	$(BUILD_DIR)/false_sharing
+	$(BUILD_DIR)/false_sharing \
+	$(BUILD_DIR)/valgrind_targets
 
 # Phase 2: HFT experiments
 PHASE2_TARGETS := \
@@ -53,6 +54,10 @@ $(BUILD_DIR)/context_switch: $(SRC_PHASE1)/context_switch.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/false_sharing: $(SRC_PHASE1)/false_sharing.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $<
 
+# Valgrind lab: -O0 so memcheck/cachegrind see every access (not perf-tuned)
+$(BUILD_DIR)/valgrind_targets: $(SRC_PHASE1)/valgrind_targets.cpp | $(BUILD_DIR)
+	$(CXX) -std=c++17 -O0 -g -Wall -Wextra -fno-omit-frame-pointer $(LDFLAGS) -o $@ $<
+
 # Phase 2 builds
 $(BUILD_DIR)/orderbook_bench: $(SRC_PHASE2)/orderbook_bench.cpp $(SRC_PHASE2)/orderbook.h | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $<
@@ -61,7 +66,7 @@ $(BUILD_DIR)/udp_market_data: $(SRC_PHASE2)/udp_market_data.cpp | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $<
 
 scripts-chmod:
-	chmod +x scripts/perf/*.sh scripts/ftrace/*.sh scripts/vtune/*.sh scripts/combined/*.sh 2>/dev/null || true
+	chmod +x scripts/perf/*.sh scripts/ftrace/*.sh scripts/vtune/*.sh scripts/combined/*.sh scripts/valgrind/*.sh 2>/dev/null || true
 	chmod +x scripts/bpftrace/*.bt 2>/dev/null || true
 
 clean:
@@ -107,3 +112,10 @@ help:
 	@echo "    scripts/combined/01_four_tool_comparison.sh"
 	@echo "    scripts/combined/02_latency_spike_hunt.sh"
 	@echo "    scripts/combined/03_hft_optimization_lab.sh"
+	@echo ""
+	@echo "  Valgrind (Linux; build/valgrind_targets uses -O0):"
+	@echo "    scripts/valgrind/01_memcheck.sh"
+	@echo "    scripts/valgrind/02_cachegrind.sh"
+	@echo "    scripts/valgrind/03_callgrind.sh"
+	@echo "    scripts/valgrind/04_helgrind.sh"
+	@echo "    scripts/valgrind/05_massif.sh"
