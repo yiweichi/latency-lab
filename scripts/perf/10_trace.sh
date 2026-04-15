@@ -17,6 +17,9 @@
 #
 # Key insight: In HFT, perf trace is how you verify "zero syscalls in hot path".
 #              Even one syscall in the critical path = microseconds of latency.
+#
+# Section G: /proc/<pid>/maps, pmap, smaps — inspect virtual address space
+#            (correlate brk/mmap from perf trace with [heap], libc, vdso).
 # ============================================================================
 
 set -e
@@ -60,6 +63,50 @@ done
 echo ""
 echo "--- F. Trace with timestamps (for finding latency spikes) ---"
 perf trace -T -- "$BIN_DIR/syscall_storm" 3 100 2>&1 | head -20
+
+echo ""
+echo "--- G. Process virtual memory layout (maps / pmap / smaps) ---"
+echo "Use these while the target process is RUNNING (replace <pid>)."
+echo ""
+echo "  cat /proc/<pid>/maps          # all VMAs: start-end perms offset path"
+echo "  pmap -x <pid>                 # human-readable sizes + RSS"
+echo "  head -200 /proc/<pid>/smaps   # per-mapping RSS/PSS (physical memory)"
+echo "  readelf -l ./binary           # ELF LOAD segments (pre-run; ASLR shifts runtime base)"
+echo ""
+echo "Demo: snapshot of a sleeping process (always works):"
+SLEEP_SEC=60
+sleep "$SLEEP_SEC" &
+DEMO_PID=$!
+sleep 0.05
+echo "  PID=$DEMO_PID (sleep $SLEEP_SEC s) — first lines of /proc/PID/maps:"
+head -40 "/proc/$DEMO_PID/maps" 2>/dev/null || true
+echo ""
+echo "  pmap -x $DEMO_PID (first rows):"
+pmap -x "$DEMO_PID" 2>/dev/null | head -30 || true
+kill "$DEMO_PID" 2>/dev/null || true
+wait "$DEMO_PID" 2>/dev/null || true
+
+echo ""
+echo "Optional: syscall_storm still running? (large read loop in background)"
+"$BIN_DIR/syscall_storm" 2 500000000 &
+STORM_PID=$!
+sleep 0.15
+if kill -0 "$STORM_PID" 2>/dev/null; then
+    echo "  PID=$STORM_PID — maps excerpt (heap, stack, libc, vdso):"
+    grep -E '\[heap\]|\[stack\]|libc|vdso|vvar|syscall_storm' "/proc/$STORM_PID/maps" 2>/dev/null || head -25 "/proc/$STORM_PID/maps"
+else
+    echo "  (process already exited; use larger iterations or sleep demo above)"
+fi
+wait "$STORM_PID" 2>/dev/null || true
+
+echo ""
+echo "====================================================="
+echo " Questions (memory layout):"
+echo "====================================================="
+echo " 1. Where is [heap] relative to the binary and libc mappings?"
+echo " 2. What does brk() return value correspond to in /proc/<pid>/maps?"
+echo " 3. Why does pmap RSS not equal sum of all virtual sizes?"
+echo "====================================================="
 
 echo ""
 echo "====================================================="
