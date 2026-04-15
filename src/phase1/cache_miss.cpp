@@ -21,6 +21,7 @@
 volatile int sink = 0;
 
 void __attribute__((noinline)) sequential_access(int* arr, int n, int rounds) {
+    sink = 0;
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < n; i++) {
             sink += arr[i];
@@ -29,6 +30,7 @@ void __attribute__((noinline)) sequential_access(int* arr, int n, int rounds) {
 }
 
 void __attribute__((noinline)) stride_access(int* arr, int n, int stride, int rounds) {
+    sink = 0;
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < n; i += stride) {
             sink += arr[i];
@@ -40,6 +42,7 @@ void __attribute__((noinline)) stride_access(int* arr, int n, int stride, int ro
 // Same total loads as sequential, same cache lines touched as stride.
 // Isolates: does reading the full cache line help the prefetcher?
 void __attribute__((noinline)) stride_access_full_line(int* arr, int n, int rounds) {
+    sink = 0;
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < n; i += 16) {
             sink += arr[i] + arr[i+1] + arr[i+2] + arr[i+3]
@@ -51,6 +54,7 @@ void __attribute__((noinline)) stride_access_full_line(int* arr, int n, int roun
 }
 
 void __attribute__((noinline)) random_access(int* arr, int* indices, int count, int rounds) {
+    sink = 0;
     for (int r = 0; r < rounds; r++) {
         for (int i = 0; i < count; i++) {
             sink += arr[indices[i]];
@@ -59,6 +63,7 @@ void __attribute__((noinline)) random_access(int* arr, int* indices, int count, 
 }
 
 void __attribute__((noinline)) pointer_chase(int* arr, int n, int rounds) {
+    sink = 0;
     for (int r = 0; r < rounds; r++) {
         int idx = 0;
         for (int i = 0; i < n; i++) {
@@ -144,7 +149,6 @@ int main(int argc, char* argv[]) {
     double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
     printf("Time: %.2f ms\n", ms);
-    printf("Sink: %d\n", sink);
 
     delete[] arr;
     return 0;
