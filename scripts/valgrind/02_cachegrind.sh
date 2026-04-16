@@ -34,18 +34,21 @@ echo ""
 echo "--- A. Run cachegrind on sequential + random access ---"
 valgrind \
     --tool=cachegrind \
+    --cache-sim=yes \
     --cachegrind-out-file="$RESULTS_DIR/cachegrind.out" \
     "$BIN_DIR/valgrind_targets" 1 "$N" 2>&1
 
 echo ""
 echo "--- B. Annotate source ---"
 echo "(Run manually for detailed per-line view:)"
-echo "  cg_annotate $RESULTS_DIR/cachegrind.out"
+echo "  cg_annotate --show=Ir,Dr,D1mr,DLmr,Dw,D1mw,DLmw $RESULTS_DIR/cachegrind.out"
 echo ""
 
 if command -v cg_annotate &>/dev/null; then
-    echo "--- cg_annotate summary ---"
-    cg_annotate "$RESULTS_DIR/cachegrind.out" 2>&1 | head -60
+    echo "--- cg_annotate summary (with cache events) ---"
+    cg_annotate --show=Ir,Dr,D1mr,DLmr,Dw,D1mw,DLmw \
+        --threshold=1 \
+        "$RESULTS_DIR/cachegrind.out" 2>&1 | head -80
 fi
 
 echo ""
