@@ -1,60 +1,46 @@
 #!/usr/bin/env bpftrace
 // ============================================================================
-// bpftrace Experiment 2: Scheduler Snooping
+// Scheduler snoop — TARGET PROCESS ONLY (requires -c or -p)
 // ============================================================================
-// Goal: See who is preempting your process and measure scheduling delay
+// $target is set by:  bpftrace -c './build/context_switch'  this_file.bt
+//                  or  bpftrace -p <pid>  this_file.bt
 //
-// What to observe:
-//   - Which processes are taking CPU from you
-//   - How long tasks wait runnable (sched_wakeup -> switch-in)
-//   - Gap from switch-out to next switch-in for the same pid (off-CPU slice gap)
-//   - Migration between CPUs
-//
-// Usage: sudo bpftrace 02_sched_snoop.bt
-//
-// Trace only one process (e.g. context_switch): use -c or -p with
-//   scripts/bpftrace/02_sched_snoop_target.bt
-//   sudo bpftrace -c './build/context_switch' ./scripts/bpftrace/02_sched_snoop_target.bt
-//
-// Key insight: In HFT, you want to see ZERO sched_switch events for your
-//              trading thread. Any switch = latency spike.
+// Only sched events involving that pid (as prev, next, or migrate subject)
+// are recorded. Multi-threaded: each thread has its own kernel pid — only
+// the main thread matches $target from -c unless you use -p on each tid.
 // ============================================================================
 
 tracepoint:sched:sched_switch
+/args->prev_pid == $target || args->next_pid == $target/
 {
-    // Record when a process is switched OUT
     if (args->prev_pid != 0) {
         @switch_out[args->prev_comm] = count();
-        // Timestamp when this task last left the CPU (for slice-gap histogram).
         @last_off_cpu[args->prev_pid] = nsecs;
     }
 
-    // Record when a process is switched IN
     if (args->next_pid != 0) {
         @switch_in[args->next_comm] = count();
     }
 
-    // Track CPU usage per process
     @cpu_usage[args->next_comm, cpu] = count();
 }
 
 tracepoint:sched:sched_wakeup
+/args->pid == $target/
 {
     @wakeup_time[args->pid] = nsecs;
 }
 
 tracepoint:sched:sched_switch
-/@wakeup_time[args->next_pid]/
+/@wakeup_time[args->next_pid] && args->next_pid == $target/
 {
     $delay = nsecs - @wakeup_time[args->next_pid];
     @runqueue_delay_ns = hist($delay);
     delete(@wakeup_time[args->next_pid]);
 }
 
-// Gap from last time this task was prev (switch out) to now (switch in).
-// Requires having seen that task switch out at least once since tracing started.
 tracepoint:sched:sched_switch
-/args->next_pid != 0 && @last_off_cpu[args->next_pid]/
+/args->next_pid == $target && @last_off_cpu[args->next_pid]/
 {
     $gap = nsecs - @last_off_cpu[args->next_pid];
     @slice_gap_ns = hist($gap);
@@ -62,9 +48,8 @@ tracepoint:sched:sched_switch
 }
 
 tracepoint:sched:sched_migrate_task
+/args->pid == $target/
 {
-    // comm is a fixed-size char[] in the tracepoint; str() makes a bpftrace
-    // string for printf %s (required on newer bpftrace).
     printf("MIGRATION: %s (pid=%d) cpu %d -> %d\n",
            str(args->comm), args->pid, args->orig_cpu, args->dest_cpu);
     @migrations[str(args->comm)] = count();
@@ -72,14 +57,14 @@ tracepoint:sched:sched_migrate_task
 
 interval:s:5
 {
-    printf("\n--- 5-second snapshot ---\n");
+    printf("\n--- 5-second snapshot (pid=%d only) ---\n", $target);
     printf("Top processes switched in:\n");
     print(@switch_in, 10);
     printf("\nTop processes switched out:\n");
     print(@switch_out, 10);
     printf("\nRunqueue delay (wakeup -> switch-in) distribution:\n");
     print(@runqueue_delay_ns);
-    printf("\nSlice gap (last switch-out -> next switch-in, same pid) distribution:\n");
+    printf("\nSlice gap (last switch-out -> next switch-in) distribution:\n");
     print(@slice_gap_ns);
 }
 

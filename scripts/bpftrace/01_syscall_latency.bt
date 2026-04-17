@@ -3,14 +3,22 @@
 // bpftrace Experiment 1: Syscall Latency Distribution
 // ============================================================================
 // Goal: Measure the latency distribution of read() and write() syscalls
+//       and print a capped hex dump of user buffers (64 bytes max per event;
+//       fits default bpftrace buf/str limits — no config block required).
 //
 // What to observe:
 //   - The histogram shows latency buckets (power of 2)
 //   - Most syscalls cluster in a narrow range
 //   - Outliers (tail latency) reveal system interference
+//   - READ: on exit, ret = bytes read (or negative errno); payload after read
+//   - WRITE: on enter, payload is what userspace passed in (kernel may write
+//     less than count); on exit, ret = bytes written or negative errno
 //
 // Usage: sudo bpftrace 01_syscall_latency.bt
 //        (then run your program in another terminal)
+//
+// WARNING: Printing every read/write is VERY noisy and may slow the system.
+//          Use -c 'your prog' or add /pid == $target/ filters for real use.
 //
 // Key insight: The SHAPE of the distribution matters more than the mean.
 //              A bimodal distribution = some syscalls hit a slow path.
@@ -19,6 +27,9 @@
 tracepoint:syscalls:sys_enter_read
 {
     @read_start[tid] = nsecs;
+    @r_fd[tid] = args->fd;
+    @r_req[tid] = args->count;
+    @r_buf[tid] = args->buf;
 }
 
 tracepoint:syscalls:sys_exit_read
@@ -27,11 +38,29 @@ tracepoint:syscalls:sys_exit_read
     $delta = nsecs - @read_start[tid];
     @read_latency_ns = hist($delta);
     @read_count = count();
+
+    $ret = args->ret;
+    if ($ret > 0) {
+        $len = $ret > 64 ? 64 : $ret;
+        printf("READ  pid=%d tid=%d fd=%d req_count=%lu ret=%ld latency_ns=%ld payload=%r\n",
+               pid, tid, @r_fd[tid], @r_req[tid], $ret, $delta,
+               buf(@r_buf[tid], $len));
+    } else {
+        printf("READ  pid=%d tid=%d fd=%d req_count=%lu ret=%ld latency_ns=%ld (no payload)\n",
+               pid, tid, @r_fd[tid], @r_req[tid], $ret, $delta);
+    }
+
     delete(@read_start[tid]);
+    delete(@r_fd[tid]);
+    delete(@r_req[tid]);
+    delete(@r_buf[tid]);
 }
 
 tracepoint:syscalls:sys_enter_write
 {
+    $wlen = args->count > 64 ? 64 : args->count;
+    printf("WRITE pid=%d tid=%d fd=%d count=%lu payload=%r\n",
+           pid, tid, args->fd, args->count, buf(args->buf, $wlen));
     @write_start[tid] = nsecs;
 }
 
@@ -41,6 +70,8 @@ tracepoint:syscalls:sys_exit_write
     $delta = nsecs - @write_start[tid];
     @write_latency_ns = hist($delta);
     @write_count = count();
+    printf("WRITE pid=%d tid=%d ret=%ld latency_ns=%ld\n",
+           pid, tid, args->ret, $delta);
     delete(@write_start[tid]);
 }
 
@@ -53,4 +84,7 @@ END
     print(@write_count);
     clear(@read_start);
     clear(@write_start);
+    clear(@r_fd);
+    clear(@r_req);
+    clear(@r_buf);
 }

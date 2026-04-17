@@ -106,6 +106,7 @@ help:
 	@echo "  Phase 3 - bpftrace (requires root):"
 	@echo "    sudo bpftrace scripts/bpftrace/01_syscall_latency.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/02_sched_snoop.bt"
+	@echo "    sudo bpftrace -c './build/context_switch' scripts/bpftrace/02_sched_snoop_target.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/03_cache_line_bounce.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/04_network_latency.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/05_wakeup_latency.bt"
