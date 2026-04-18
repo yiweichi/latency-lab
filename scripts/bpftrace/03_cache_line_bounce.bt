@@ -19,12 +19,14 @@
 
 tracepoint:sched:sched_migrate_task
 {
-    @migrations_by_process[args->comm] = count();
+    // comm is char[] in the tracepoint; str() yields a bpftrace string for
+    // printf %s and map keys (some bpftrace builds type raw args->comm as int).
+    @migrations_by_process[str(args->comm)] = count();
     @migration_paths[args->orig_cpu, args->dest_cpu] = count();
 
     printf("[%llu] %s (pid=%d): CPU %d -> %d\n",
            nsecs / 1000000,  // ms timestamp
-           args->comm, args->pid,
+           str(args->comm), args->pid,
            args->orig_cpu, args->dest_cpu);
 }
 

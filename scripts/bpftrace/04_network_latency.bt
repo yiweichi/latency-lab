@@ -12,6 +12,10 @@
 // Usage: sudo bpftrace 04_network_latency.bt
 //        (then run udp_market_data in another terminal)
 //
+// syscall exit ret < 0 counts as failure (often -errno, e.g. -11 = EAGAIN on
+// recv timeout). Each failure prints one line — noisy if recvfrom polls often;
+// comment out the printf lines if needed.
+//
 // Key insight: For HFT, the kernel network stack adds 5-50us.
 //              This is why firms use kernel bypass (DPDK, Solarflare OpenOnload).
 // ============================================================================
@@ -26,8 +30,16 @@ tracepoint:syscalls:sys_exit_recvfrom
 /@recv_start[tid]/
 {
     $delta = nsecs - @recv_start[tid];
-    @recvfrom_latency_us = hist($delta / 1000);  // in microseconds
-    @recv_count = count();
+    $ret = (int64)args->ret;
+    if ($ret >= 0) {
+        @recvfrom_latency_us = hist($delta / 1000);  // success only
+        @recv_ok = count();
+    } else {
+        @recvfrom_fail_us = hist($delta / 1000);
+        @recv_fail = count();
+        printf("[recvfrom FAIL] comm=%s pid=%d tid=%d ret=%lld (errno~%lld) us=%llu\n",
+               comm, pid, tid, $ret, -$ret, $delta / 1000);
+    }
     delete(@recv_start[tid]);
 }
 
@@ -41,8 +53,16 @@ tracepoint:syscalls:sys_exit_sendto
 /@send_start[tid]/
 {
     $delta = nsecs - @send_start[tid];
-    @sendto_latency_us = hist($delta / 1000);
-    @send_count = count();
+    $ret = (int64)args->ret;
+    if ($ret >= 0) {
+        @sendto_latency_us = hist($delta / 1000);  // success only
+        @send_ok = count();
+    } else {
+        @sendto_fail_us = hist($delta / 1000);
+        @send_fail = count();
+        printf("[sendto FAIL] comm=%s pid=%d tid=%d ret=%lld (errno~%lld) us=%llu\n",
+               comm, pid, tid, $ret, -$ret, $delta / 1000);
+    }
     delete(@send_start[tid]);
 }
 
@@ -61,13 +81,23 @@ tracepoint:irq:softirq_exit
     delete(@netrx_start[cpu]);
 }
 
-interval:s:5
+interval:s:10
 {
     printf("\n--- Network latency snapshot ---\n");
-    printf("recvfrom() latency (us):\n");
+    printf("recvfrom() OK latency (us):\n");
     print(@recvfrom_latency_us);
-    printf("sendto() latency (us):\n");
+    printf("recvfrom OK / FAIL syscall hits:\n");
+    print(@recv_ok);
+    print(@recv_fail);
+    printf("recvfrom() FAIL latency (us):\n");
+    print(@recvfrom_fail_us);
+    printf("sendto() OK latency (us):\n");
     print(@sendto_latency_us);
+    printf("sendto OK / FAIL syscall hits:\n");
+    print(@send_ok);
+    print(@send_fail);
+    printf("sendto() FAIL latency (us):\n");
+    print(@sendto_fail_us);
     printf("NET_RX softirq (us):\n");
     print(@netrx_latency_us);
 }

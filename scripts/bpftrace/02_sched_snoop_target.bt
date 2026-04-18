@@ -1,38 +1,49 @@
 #!/usr/bin/env bpftrace
 // ============================================================================
-// Scheduler snoop — TARGET PROCESS ONLY (requires -c or -p)
+// Scheduler snoop — only tasks whose comm is "context_switch"
 // ============================================================================
-// $target is set by:  bpftrace -c './build/context_switch'  this_file.bt
-//                  or  bpftrace -p <pid>  this_file.bt
+// Use strncmp(..., 16) so comm fields match TASK_COMM_LEN without `==` on
+// mixed int64/string types (varies by bpftrace + kernel BTF).
 //
-// Only sched events involving that pid (as prev, next, or migrate subject)
-// are recorded. Multi-threaded: each thread has its own kernel pid — only
-// the main thread matches $target from -c unless you use -p on each tid.
+// Usage:
+//   sudo bpftrace -c './build/context_switch' ./scripts/bpftrace/02_sched_snoop_target.bt
 // ============================================================================
 
+// Only record the "context_switch side" of each switch:
+//   - prev == context_switch  -> count as switch-out of our task
+//   - next == context_switch  -> count as switch-in  of our task
+// The opposing side (kworker / swapper / sshd ...) is intentionally ignored.
 tracepoint:sched:sched_switch
-/args->prev_pid == $target || args->next_pid == $target/
+/strncmp(args->prev_comm, "context_switch", 16) == 0 || strncmp(args->next_comm, "context_switch", 16) == 0/
 {
-    if (args->prev_pid != 0) {
+    if (strncmp(args->prev_comm, "context_switch", 16) == 0) {
         @switch_out[args->prev_comm] = count();
         @last_off_cpu[args->prev_pid] = nsecs;
+
+        // Capture the off-cpu context, to be printed on switch-in if the
+        // gap turns out to be abnormally long.
+        @off_cpu_cpu[args->prev_pid]       = cpu;
+        @off_cpu_state[args->prev_pid]     = args->prev_state;
+        @off_cpu_displacer[args->prev_pid] = args->next_comm;
+        @off_cpu_displacer_pid[args->prev_pid] = args->next_pid;
+        @off_cpu_ustack[args->prev_pid]    = ustack;
+        @off_cpu_kstack[args->prev_pid]    = kstack;
     }
 
-    if (args->next_pid != 0) {
+    if (strncmp(args->next_comm, "context_switch", 16) == 0) {
         @switch_in[args->next_comm] = count();
+        @cpu_usage[args->next_comm, cpu] = count();
     }
-
-    @cpu_usage[args->next_comm, cpu] = count();
 }
 
 tracepoint:sched:sched_wakeup
-/args->pid == $target/
+/strncmp(args->comm, "context_switch", 16) == 0/
 {
     @wakeup_time[args->pid] = nsecs;
 }
 
 tracepoint:sched:sched_switch
-/@wakeup_time[args->next_pid] && args->next_pid == $target/
+/@wakeup_time[args->next_pid] && strncmp(args->next_comm, "context_switch", 16) == 0/
 {
     $delay = nsecs - @wakeup_time[args->next_pid];
     @runqueue_delay_ns = hist($delay);
@@ -40,24 +51,51 @@ tracepoint:sched:sched_switch
 }
 
 tracepoint:sched:sched_switch
-/args->next_pid == $target && @last_off_cpu[args->next_pid]/
+/strncmp(args->next_comm, "context_switch", 16) == 0 && @last_off_cpu[args->next_pid]/
 {
     $gap = nsecs - @last_off_cpu[args->next_pid];
     @slice_gap_ns = hist($gap);
+
+    // Outlier reporter: anything > 10 ms is suspicious for a busy
+    // pipe-ping-pong workload; dump everything we stashed at switch-out.
+    if ($gap > 10000000) {
+        printf("\n### LONG SLICE GAP ###\n");
+        printf("pid=%d cpu_before=%d cpu_now=%d gap_ns=%ld (%ld ms)\n",
+               args->next_pid, @off_cpu_cpu[args->next_pid], cpu,
+               $gap, $gap / 1000000);
+        printf("prev_state_at_switch_out=%d (0=RUNNABLE/preempted, 1=INTERRUPTIBLE sleep, 2=UNINTERRUPTIBLE)\n",
+               @off_cpu_state[args->next_pid]);
+        printf("displaced_by: comm=%s pid=%d\n",
+               @off_cpu_displacer[args->next_pid],
+               @off_cpu_displacer_pid[args->next_pid]);
+        printf("kstack at switch-out:%s\n",    @off_cpu_kstack[args->next_pid]);
+        printf("ustack at switch-out:%s\n",    @off_cpu_ustack[args->next_pid]);
+    }
+
     delete(@last_off_cpu[args->next_pid]);
+    delete(@off_cpu_cpu[args->next_pid]);
+    delete(@off_cpu_state[args->next_pid]);
+    delete(@off_cpu_displacer[args->next_pid]);
+    delete(@off_cpu_displacer_pid[args->next_pid]);
+    delete(@off_cpu_kstack[args->next_pid]);
+    delete(@off_cpu_ustack[args->next_pid]);
 }
 
+// sched_migrate_task's args->comm is typed as int in some bpftrace builds,
+// so we can't match by name here. But @last_off_cpu now only contains
+// context_switch pids (we only write it on prev_comm=="context_switch"),
+// so filtering by @last_off_cpu[pid] is effectively a comm filter.
 tracepoint:sched:sched_migrate_task
-/args->pid == $target/
+/@last_off_cpu[args->pid] != 0/
 {
-    printf("MIGRATION: %s (pid=%d) cpu %d -> %d\n",
-           str(args->comm), args->pid, args->orig_cpu, args->dest_cpu);
-    @migrations[str(args->comm)] = count();
+    printf("MIGRATION: pid=%d cpu %d -> %d\n",
+           args->pid, args->orig_cpu, args->dest_cpu);
+    @migrations[args->pid] = count();
 }
 
 interval:s:5
 {
-    printf("\n--- 5-second snapshot (pid=%d only) ---\n", $target);
+    printf("\n--- 5-second snapshot (comm=context_switch only) ---\n");
     printf("Top processes switched in:\n");
     print(@switch_in, 10);
     printf("\nTop processes switched out:\n");
@@ -72,4 +110,10 @@ END
 {
     clear(@wakeup_time);
     clear(@last_off_cpu);
+    clear(@off_cpu_cpu);
+    clear(@off_cpu_state);
+    clear(@off_cpu_displacer);
+    clear(@off_cpu_displacer_pid);
+    clear(@off_cpu_kstack);
+    clear(@off_cpu_ustack);
 }
