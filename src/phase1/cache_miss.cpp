@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <vector>
 
-volatile int sink = 0;
+int sink = 0;
 
 void __attribute__((noinline)) sequential_access(int* arr, int n, int rounds) {
     sink = 0;
