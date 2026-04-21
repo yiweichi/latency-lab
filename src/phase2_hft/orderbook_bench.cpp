@@ -17,7 +17,7 @@
 #include <cmath>
 
 template<typename BookT>
-std::vector<double> benchmark_orderbook(long operations) {
+std::vector<double> benchmark_orderbook(long operations, bool measure_latency) {
     BookT book;
     std::mt19937 rng(42);
     std::uniform_int_distribution<uint32_t> price_dist(10100, 10900);
@@ -28,12 +28,17 @@ std::vector<double> benchmark_orderbook(long operations) {
     active_orders.reserve(operations);
 
     std::vector<double> latencies;
-    latencies.reserve(operations);
+    if (measure_latency) {
+        latencies.reserve(operations);
+    }
 
     uint64_t next_id = 1;
 
     for (long i = 0; i < operations; i++) {
-        auto t0 = std::chrono::high_resolution_clock::now();
+        std::chrono::high_resolution_clock::time_point t0;
+        if (measure_latency) {
+            t0 = std::chrono::high_resolution_clock::now();
+        }
 
         int action = action_dist(rng);
 
@@ -52,8 +57,10 @@ std::vector<double> benchmark_orderbook(long operations) {
             active_orders.pop_back();
         }
 
-        auto t1 = std::chrono::high_resolution_clock::now();
-        latencies.push_back(std::chrono::duration<double, std::nano>(t1 - t0).count());
+        if (measure_latency) {
+            auto t1 = std::chrono::high_resolution_clock::now();
+            latencies.push_back(std::chrono::duration<double, std::nano>(t1 - t0).count());
+        }
     }
 
     // Read BBO to prevent dead code elimination
@@ -83,37 +90,48 @@ void print_stats(const char* name, std::vector<double>& latencies) {
 int main(int argc, char* argv[]) {
     int mode = 0;
     long operations = 5'000'000L;
+    bool measure_latency = false;
 
     if (argc > 1) mode = atoi(argv[1]);
     if (argc > 2) operations = atol(argv[2]);
+    if (argc > 3) measure_latency = atoi(argv[3]) != 0;
 
     switch (mode) {
         case 0: {
             printf("[Mode 0] OrderBookMap (std::map — tree-based)\n");
-            auto lat = benchmark_orderbook<OrderBookMap>(operations);
-            print_stats("OrderBookMap", lat);
+            printf("Latency harness: %s\n", measure_latency ? "ON" : "OFF");
+            auto lat = benchmark_orderbook<OrderBookMap>(operations, measure_latency);
+            if (measure_latency) {
+                print_stats("OrderBookMap", lat);
+            }
             break;
         }
         case 1: {
             printf("[Mode 1] OrderBookArray (array-based — cache-friendly)\n");
-            auto lat = benchmark_orderbook<OrderBookArray>(operations);
-            print_stats("OrderBookArray", lat);
+            printf("Latency harness: %s\n", measure_latency ? "ON" : "OFF");
+            auto lat = benchmark_orderbook<OrderBookArray>(operations, measure_latency);
+            if (measure_latency) {
+                print_stats("OrderBookArray", lat);
+            }
             break;
         }
         case 2: {
             printf("[Mode 2] Head-to-head comparison\n");
-            auto lat_map = benchmark_orderbook<OrderBookMap>(operations);
-            auto lat_arr = benchmark_orderbook<OrderBookArray>(operations);
-            print_stats("OrderBookMap", lat_map);
-            print_stats("OrderBookArray", lat_arr);
+            printf("Latency harness: %s\n", measure_latency ? "ON" : "OFF");
+            auto lat_map = benchmark_orderbook<OrderBookMap>(operations, measure_latency);
+            auto lat_arr = benchmark_orderbook<OrderBookArray>(operations, measure_latency);
+            if (measure_latency) {
+                print_stats("OrderBookMap", lat_map);
+                print_stats("OrderBookArray", lat_arr);
 
-            double map_p99 = lat_map[lat_map.size() * 99 / 100];
-            double arr_p99 = lat_arr[lat_arr.size() * 99 / 100];
-            printf("\n--- p99 improvement: %.1fx ---\n", map_p99 / arr_p99);
+                double map_p99 = lat_map[lat_map.size() * 99 / 100];
+                double arr_p99 = lat_arr[lat_arr.size() * 99 / 100];
+                printf("\n--- p99 improvement: %.1fx ---\n", map_p99 / arr_p99);
+            }
             break;
         }
         default:
-            printf("Usage: %s [0|1|2] [operations]\n", argv[0]);
+            printf("Usage: %s [0|1|2] [operations] [measure_latency:0|1]\n", argv[0]);
             return 1;
     }
 
