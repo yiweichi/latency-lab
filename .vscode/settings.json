@@ -1,10 +1,10 @@
 {
     "files.associations": {
-        "*.yul": "yul",
         "*.env": "bat",
-        "*.toml": "bat",
-        "mnemonic": "clojure",
         "*.md": "bat",
+        "*.toml": "bat",
+        "*.yul": "yul",
+        "mnemonic": "clojure",
         "__bit_reference": "cpp",
         "__config": "cpp",
         "__locale": "cpp",
@@ -30,6 +30,11 @@
         "tuple": "cpp",
         "typeinfo": "cpp",
         "vector": "cpp",
-        "algorithm": "cpp"
+        "algorithm": "cpp",
+        "cctype": "cpp",
+        "clocale": "cpp",
+        "cwchar": "cpp",
+        "mutex": "cpp",
+        "string": "cpp"
     }
 }

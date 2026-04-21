@@ -64,6 +64,10 @@ vtune -collect uarch-exploration \
     -result-dir "$RESULT_DIR/topdown_orderbook_arr" \
     -- "$BIN_DIR/orderbook_bench" 1 2000000
 
+vtune -collect uarch-exploration \
+    -result-dir "$RESULT_DIR/topdown_orderbook_all_arr" \
+    -- "$BIN_DIR/orderbook_bench" 2 2000000
+
 echo ""
 echo "--- Summary Reports ---"
 for dir in "$RESULT_DIR"/topdown_*; do

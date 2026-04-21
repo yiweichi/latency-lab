@@ -116,22 +116,36 @@ int main(int argc, char* argv[]) {
             break;
         }
         case 2: {
-            printf("[Mode 2] Head-to-head comparison\n");
+            printf("[Mode 2] OrderBookAllArray (fully array-based)\n");
+            printf("Latency harness: %s\n", measure_latency ? "ON" : "OFF");
+            auto lat = benchmark_orderbook<OrderBookAllArray>(operations, measure_latency);
+            if (measure_latency) {
+                print_stats("OrderBookAllArray", lat);
+            }
+            break;
+        }
+        case 3: {
+            printf("[Mode 3] Head-to-head comparison\n");
             printf("Latency harness: %s\n", measure_latency ? "ON" : "OFF");
             auto lat_map = benchmark_orderbook<OrderBookMap>(operations, measure_latency);
             auto lat_arr = benchmark_orderbook<OrderBookArray>(operations, measure_latency);
+            auto lat_all_arr = benchmark_orderbook<OrderBookAllArray>(operations, measure_latency);
             if (measure_latency) {
                 print_stats("OrderBookMap", lat_map);
                 print_stats("OrderBookArray", lat_arr);
+                print_stats("OrderBookAllArray", lat_all_arr);
 
                 double map_p99 = lat_map[lat_map.size() * 99 / 100];
                 double arr_p99 = lat_arr[lat_arr.size() * 99 / 100];
-                printf("\n--- p99 improvement: %.1fx ---\n", map_p99 / arr_p99);
+                double all_arr_p99 = lat_all_arr[lat_all_arr.size() * 99 / 100];
+                printf("\n--- p99 improvement vs map ---\n");
+                printf("OrderBookArray: %.1fx\n", map_p99 / arr_p99);
+                printf("OrderBookAllArray: %.1fx\n", map_p99 / all_arr_p99);
             }
             break;
         }
         default:
-            printf("Usage: %s [0|1|2] [operations] [measure_latency:0|1]\n", argv[0]);
+            printf("Usage: %s [0|1|2|3] [operations] [measure_latency:0|1]\n", argv[0]);
             return 1;
     }
 

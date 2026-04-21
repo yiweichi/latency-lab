@@ -5,6 +5,7 @@
 #include <map>
 #include <unordered_map>
 #include <array>
+#include <vector>
 
 // Simple limit order book for profiling experiments
 // NOT production code — intentionally has both fast and slow paths
@@ -131,6 +132,86 @@ private:
     int64_t bid_qty_[PRICE_LEVELS];
     int64_t ask_qty_[PRICE_LEVELS];
     std::unordered_map<uint64_t, Order> orders_;
+    uint32_t best_bid_ = 0;
+    uint32_t best_ask_ = PRICE_OFFSET + PRICE_LEVELS;
+};
+
+// Version 3: Fully array-based (price levels + order-id index)
+class OrderBookAllArray {
+    static constexpr uint32_t PRICE_LEVELS = 65536;
+    static constexpr uint32_t PRICE_OFFSET = 10000;
+
+    struct OrderSlot {
+        uint32_t price = 0;
+        uint32_t quantity = 0;
+        bool is_buy = false;
+        bool active = false;
+    };
+
+public:
+    OrderBookAllArray() {
+        memset(bid_qty_, 0, sizeof(bid_qty_));
+        memset(ask_qty_, 0, sizeof(ask_qty_));
+    }
+
+    void add_order(const Order& order) {
+        uint32_t idx = order.price - PRICE_OFFSET;
+        if (idx >= PRICE_LEVELS) return;
+
+        if (order.order_id >= orders_.size()) {
+            orders_.resize(order.order_id + 1);
+        }
+
+        if (order.is_buy) {
+            bid_qty_[idx] += order.quantity;
+            if (order.price > best_bid_) best_bid_ = order.price;
+        } else {
+            ask_qty_[idx] += order.quantity;
+            if (order.price < best_ask_) best_ask_ = order.price;
+        }
+
+        if (!orders_[order.order_id].active) {
+            depth_++;
+        }
+        orders_[order.order_id] = OrderSlot{order.price, order.quantity, order.is_buy, true};
+    }
+
+    void cancel_order(uint64_t order_id) {
+        if (order_id >= orders_.size()) return;
+        auto& order = orders_[order_id];
+        if (!order.active) return;
+
+        uint32_t idx = order.price - PRICE_OFFSET;
+        if (idx >= PRICE_LEVELS) return;
+
+        if (order.is_buy) {
+            bid_qty_[idx] -= order.quantity;
+            if (order.price == best_bid_ && bid_qty_[idx] <= 0) {
+                while (best_bid_ > PRICE_OFFSET && bid_qty_[best_bid_ - PRICE_OFFSET] <= 0)
+                    best_bid_--;
+            }
+        } else {
+            ask_qty_[idx] -= order.quantity;
+            if (order.price == best_ask_ && ask_qty_[idx] <= 0) {
+                while (best_ask_ < PRICE_OFFSET + PRICE_LEVELS && ask_qty_[best_ask_ - PRICE_OFFSET] <= 0)
+                    best_ask_++;
+            }
+        }
+
+        order.active = false;
+        depth_--;
+    }
+
+    uint32_t best_bid() const { return best_bid_; }
+    uint32_t best_ask() const { return best_ask_; }
+    uint32_t spread() const { return best_ask_ - best_bid_; }
+    size_t depth() const { return depth_; }
+
+private:
+    int64_t bid_qty_[PRICE_LEVELS];
+    int64_t ask_qty_[PRICE_LEVELS];
+    std::vector<OrderSlot> orders_;
+    size_t depth_ = 0;
     uint32_t best_bid_ = 0;
     uint32_t best_ask_ = PRICE_OFFSET + PRICE_LEVELS;
 };
