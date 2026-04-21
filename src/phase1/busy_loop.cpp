@@ -11,12 +11,30 @@
 #include <cstdlib>
 #include <chrono>
 
-volatile int sink = 0;
+int sink = 0;
 
 void __attribute__((noinline)) hot_loop(long iterations) {
     for (long i = 0; i < iterations; i++) {
         sink += i;
     }
+}
+
+void __attribute__((noinline)) hot_loop_4_way_unroll(long iterations) {
+    int s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+
+    long i = 0;
+    for (; i + 3 < iterations; i += 4) {
+        s0 += i;
+        s1 += (i + 1);
+        s2 += (i + 2);
+        s3 += (i + 3);
+    }
+
+    for (; i < iterations; i++) {
+        s0 += i;
+    }
+
+    sink = s0 + s1 + s2 + s3;
 }
 
 void __attribute__((noinline)) hot_loop_with_branch(long iterations) {
@@ -85,6 +103,10 @@ int main(int argc, char* argv[]) {
             // know that, so it keeps both paths and the branch instruction.
             printf("[Mode 3] Predictable branch — same xorshift work as mode 2\n");
             hot_loop_predictable_same_work(iterations, 0);
+            break;
+        case 4:
+            printf("[Mode 4] 4-way unroll loop\n");
+            hot_loop_4_way_unroll(iterations);
             break;
         default:
             printf("Usage: %s [0|1|2|3] [iterations]\n", argv[0]);
