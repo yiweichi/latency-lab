@@ -75,6 +75,7 @@ $(BUILD_DIR)/udp_market_data: $(SRC_PHASE2)/udp_market_data.cpp | $(BUILD_DIR)
 scripts-chmod:
 	chmod +x scripts/perf/*.sh scripts/ftrace/*.sh scripts/vtune/*.sh scripts/combined/*.sh scripts/valgrind/*.sh scripts/asan/*.sh 2>/dev/null || true
 	chmod +x scripts/bpftrace/*.bt 2>/dev/null || true
+	chmod +x scripts/ebpf/*.sh 2>/dev/null || true
 
 clean:
 	rm -rf $(BUILD_DIR) results
@@ -110,6 +111,9 @@ help:
 	@echo "    sudo bpftrace scripts/bpftrace/03_cache_line_bounce.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/04_network_latency.bt"
 	@echo "    sudo bpftrace scripts/bpftrace/05_wakeup_latency.bt"
+	@echo ""
+	@echo "  Phase 3b - real eBPF / libbpf (Linux only, requires root):"
+	@echo "    sudo scripts/ebpf/01_trace_syscalls.sh"
 	@echo ""
 	@echo "  Phase 4 - VTune:"
 	@echo "    scripts/vtune/01_hotspot.sh"

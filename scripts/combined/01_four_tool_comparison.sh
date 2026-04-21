@@ -20,7 +20,7 @@ RESULT_DIR="./results/combined"
 mkdir -p "$RESULT_DIR"
 
 PROGRAM="$BIN_DIR/orderbook_bench"
-ARGS="0 2000000"  # map-based orderbook, 2M operations
+ARGS=" "  # map-based orderbook, 2M operations
 
 echo "============================================================"
 echo " Four-Tool Comparison: OrderBook (map-based)"
@@ -32,14 +32,9 @@ echo "╔═══════════════════════�
 echo "║ Tool 1: perf stat — Hardware performance counters       ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
-perf stat -e \
-    cycles,instructions,\
-cache-references,cache-misses,\
-branches,branch-misses,\
-L1-dcache-load-misses,\
-LLC-load-misses,\
-context-switches,cpu-migrations \
-    $PROGRAM $ARGS 2>&1 | tee "$RESULT_DIR/perf_stat.txt"
+perf stat \
+  -e 'L1-dcache-loads,L1-dcache-load-misses,l2_rqsts.references,l2_rqsts.miss,LLC-loads,LLC-load-misses' \
+  -- $PROGRAM $ARGS 2>&1 | tee "$RESULT_DIR/perf_stat.txt"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
