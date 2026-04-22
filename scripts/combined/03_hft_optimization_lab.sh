@@ -41,11 +41,16 @@ perf stat -e cycles,instructions,cache-misses,branch-misses,L1-dcache-load-misse
     "$BIN_DIR/orderbook_bench" 1 3000000 2>&1 | tee "$RESULT_DIR/array_perf.txt"
 
 echo ""
+echo "--- OrderBook All Array (optimized) ---"
+perf stat -e cycles,instructions,cache-misses,branch-misses,L1-dcache-load-misses \
+    "$BIN_DIR/orderbook_bench" 2 3000000 2>&1 | tee "$RESULT_DIR/all_array_perf.txt"
+
+echo ""
 echo "========================================="
 echo " Phase 2: Head-to-Head Comparison"
 echo "========================================="
 echo ""
-$BIN_DIR/orderbook_bench 2 3000000 | tee "$RESULT_DIR/comparison.txt"
+$BIN_DIR/orderbook_bench 3 3000000 1 | tee "$RESULT_DIR/comparison.txt"
 
 echo ""
 echo "========================================="
@@ -56,12 +61,12 @@ echo ""
 # Without CPU pinning
 echo "--- Without taskset ---"
 perf stat -e context-switches,cpu-migrations,cache-misses \
-    "$BIN_DIR/orderbook_bench" 0 3000000 2>&1 | tee "$RESULT_DIR/no_pin.txt"
+    "$BIN_DIR/orderbook_bench" 0 30000000 2>&1 | tee "$RESULT_DIR/no_pin.txt"
 
 echo ""
 echo "--- With taskset (pinned to CPU 0) ---"
 perf stat -e context-switches,cpu-migrations,cache-misses \
-    taskset -c 0 "$BIN_DIR/orderbook_bench" 0 3000000 2>&1 | tee "$RESULT_DIR/pinned.txt"
+    taskset -c 1 "$BIN_DIR/orderbook_bench" 0 30000000 2>&1 | tee "$RESULT_DIR/pinned.txt"
 
 echo ""
 echo "========================================="

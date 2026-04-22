@@ -25,7 +25,7 @@ echo "============================================================"
 echo ""
 echo "Step 1: Baseline (clean run)"
 echo "---"
-$BIN_DIR/orderbook_bench 0 2000000 | tee "$RESULT_DIR/baseline.txt"
+$BIN_DIR/orderbook_bench 0 2000000 1 | tee "$RESULT_DIR/baseline.txt"
 
 echo ""
 echo "Step 2: Run with interference"
@@ -39,11 +39,11 @@ STRESS_PID=$!
 sleep 2  # Let stress stabilize
 
 echo "Running benchmark under load..."
-$BIN_DIR/orderbook_bench 0 2000000 | tee "$RESULT_DIR/under_load.txt"
+$BIN_DIR/orderbook_bench 0 2000000 1 | tee "$RESULT_DIR/under_load.txt"
 
 # Collect perf data under load
 perf stat -e cycles,instructions,cache-misses,context-switches,cpu-migrations \
-    $BIN_DIR/orderbook_bench 0 2000000 2>&1 | tee "$RESULT_DIR/perf_under_load.txt"
+    $BIN_DIR/orderbook_bench 0 2000000 1 2>&1 | tee "$RESULT_DIR/perf_under_load.txt"
 
 echo ""
 echo "Step 3: Perf sched under load"
