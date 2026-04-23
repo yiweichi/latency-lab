@@ -24,8 +24,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
     if (data_sz < sizeof(*event))
         return 0;
 
-    printf("WRITE pid=%u tid=%u fd=%d count=%u comm=%s\n",
-           event->pid, event->tid, event->fd, event->count, event->comm);
+    printf("WRITE pid=%u tid=%u fd=%d count=%llu comm=%s\n",
+           event->pid, event->tid, event->fd,
+           (unsigned long long)event->count, event->comm);
     return 0;
 }
 
