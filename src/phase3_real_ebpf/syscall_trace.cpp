@@ -20,13 +20,26 @@ static void on_signal(int signo)
 static int handle_event(void *ctx, void *data, size_t data_sz)
 {
     const struct syscall_event *event = (const struct syscall_event *)data;
+    char printable[SYSCALL_CAPTURE_BYTES + 1];
     (void)ctx;
     if (data_sz < sizeof(*event))
         return 0;
 
-    printf("WRITE pid=%u tid=%u fd=%d count=%llu comm=%s\n",
+    for (size_t i = 0; i < event->captured_len && i < SYSCALL_CAPTURE_BYTES; i++) {
+        unsigned char ch = (unsigned char)event->data[i];
+        printable[i] = (ch >= 32 && ch <= 126) ? (char)ch : '.';
+    }
+    printable[event->captured_len < SYSCALL_CAPTURE_BYTES ? event->captured_len : SYSCALL_CAPTURE_BYTES] = '\0';
+
+    printf("WRITE pid=%u tid=%u fd=%d count=%llu captured=%u comm=%s data=\"%s\" hex=",
            event->pid, event->tid, event->fd,
-           (unsigned long long)event->count, event->comm);
+           (unsigned long long)event->count, event->captured_len, event->comm, printable);
+    for (size_t i = 0; i < event->captured_len && i < SYSCALL_CAPTURE_BYTES; i++) {
+        printf("%02x", (unsigned char)event->data[i]);
+        if (i + 1 < event->captured_len && i + 1 < SYSCALL_CAPTURE_BYTES)
+            printf(" ");
+    }
+    printf("\n");
     return 0;
 }
 

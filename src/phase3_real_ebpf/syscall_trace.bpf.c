@@ -18,6 +18,9 @@ int handle_sys_enter_write(struct trace_event_raw_sys_enter *ctx)
     struct syscall_event *event;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     const char target[] = "syscall_storm";
+    unsigned long long buf = ctx->args[1];
+    __u64 count = (__u64)ctx->args[2];
+    __u32 captured_len;
     char comm[TASK_COMM_LEN];
     int i;
 
@@ -34,9 +37,15 @@ int handle_sys_enter_write(struct trace_event_raw_sys_enter *ctx)
 
     event->pid = pid_tgid >> 32;
     event->tid = (__u32)pid_tgid;
-    event->fd = (__s64)ctx->args[0];
-    event->count = (__u64)ctx->args[2];
+    event->fd = (__s32)ctx->args[0];
+    event->count = count;
     __builtin_memcpy(event->comm, comm, sizeof(event->comm));
+
+    captured_len = count < SYSCALL_CAPTURE_BYTES ? (__u32)count : SYSCALL_CAPTURE_BYTES;
+    event->captured_len = captured_len;
+    __builtin_memset(event->data, 0, sizeof(event->data));
+    if (captured_len > 0)
+        bpf_probe_read_user(event->data, captured_len, buf);
 
     bpf_ringbuf_submit(event, 0);
     return 0;
