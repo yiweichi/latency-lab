@@ -18,7 +18,7 @@ int handle_sys_enter_write(struct trace_event_raw_sys_enter *ctx)
     struct syscall_event *event;
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     const char target[] = "syscall_storm";
-    unsigned long long buf = ctx->args[1];
+    const void *buf = (const void *)ctx->args[1];
     __u64 count = (__u64)ctx->args[2];
     __u32 captured_len;
     char comm[TASK_COMM_LEN];
