@@ -1,0 +1,188 @@
+#!/usr/bin/env bpftrace
+
+// To use: sudo bpftrace ./context_switch.bt <tid
+
+// ============================================================================
+// context_switch.bt: STRICT single-thread mode. Traces ONE TID only.
+// ============================================================================
+// Pass the MAIN thread TID (TID == TGID for the main thread, that is normal).
+// Only events for exactly this TID are printed. Sibling threads are ignored.
+//
+// Usage (your bpftrace takes the arg WITHOUT `--`, keep it that way):
+//   sudo bpftrace ./context_switch.bt 69184
+//
+// Verify: every output line says tid=69184. If you see other tids, the
+// filter is broken, paste the output back.
+//
+// Your main thread is pinned to one core, so:
+//   [PREEMPTED] on that core + kstack  = who kicked you off that core
+//   [MIGRATE] should be ~0 (pinned); if it fires, the pinning failed
+//   [VOLUNTARY] = you blocked yourself (read/futex/sleep), not interrupted
+//
+// Compat notes (for old bpftrace, which is what you have):
+//   - Only $1 is referenced. No $2, no $#, so no "empty param" WARNING.
+//   - All TID keys cast to int64 (params int64, builtin tid uint64,
+//     tracepoint pids int32; raw mixing = "Argument mismatch" ERROR).
+//   - Scratch vars only get 0/1 literals, never `$(a == b)` (bool vs int64
+//     mismatch ERROR). Conditions stay inline in `if`.
+//   - delete() uses the old two-arg form delete(@map, key).
+// ============================================================================
+
+BEGIN
+{
+  @target = $1;
+  @n_invol = 0;
+  @n_vol = 0;
+  @n_irq = 0;
+  @n_soft = 0;
+  @n_mig = 0;
+  @n_sig = 0;
+  @n_sw_total = 0;
+  @n_sw_matched = 0;
+
+  if (@target == 0) {
+    printf("ERROR: pass a TID: sudo bpftrace ./context_switch.bt <TID>\n");
+    printf("  list TIDs: ps -T -p <PID> -o pid,tid,comm,psr\n");
+  } else {
+    printf("=== STRICT single-thread: TID=%d ===\n", @target);
+    printf("    only this exact TID; siblings ignored. Ctrl-C for summary.\n");
+  }
+}
+
+// 1) Context switch. args->prev_pid/next_pid are TIDs.
+// Tracepoint fires with current == prev, but we only compare TIDs here.
+tracepoint:sched:sched_switch
+{
+  @n_sw_total++;
+  if (@target == 0) { return; }
+  $prev = (int64)args->prev_pid;
+  $next = (int64)args->next_pid;
+  $out = 0;
+  $in = 0;
+  if ($prev == @target) { $out = 1; }
+  if ($next == @target) { $in = 1; }
+  if ($out == 0 && $in == 0) { return; }
+  @n_sw_matched++;
+
+  if ($out == 1) {
+    @offcpu_start[$prev] = nsecs;
+    if (args->prev_state == 0) {
+      @n_invol++;
+      printf("%-12llu CPU%-2d [PREEMPTED] %s(tid=%d) -> %s(pid=%d) prev_state=R\n",
+             nsecs / 1000000, cpu, args->prev_comm, $prev,
+             args->next_comm, args->next_pid);
+      printf("         preemptor kstack:\n%s\n", kstack);
+    } else {
+      @n_vol++;
+      printf("%-12llu CPU%-2d [VOLUNTARY] %s(tid=%d, state=0x%x) -> %s(pid=%d)\n",
+             nsecs / 1000000, cpu, args->prev_comm, $prev,
+             args->prev_state, args->next_comm, args->next_pid);
+    }
+    @preemptor[args->next_pid, args->next_comm] = count();
+  }
+
+  if ($in == 1) {
+    if (@offcpu_start[$next] != 0) {
+      $off = nsecs - @offcpu_start[$next];
+      @offcpu_ns = hist($off);
+      printf("%-12llu CPU%-2d [SWITCH_IN] %s(pid=%d) -> %s(tid=%d) off_cpu=%llu us\n",
+             nsecs / 1000000, cpu, args->prev_comm, args->prev_pid,
+             args->next_comm, $next, $off / 1000);
+      delete(@offcpu_start, $next);
+    } else {
+      printf("%-12llu CPU%-2d [SWITCH_IN] %s(pid=%d) -> %s(tid=%d) (first seen)\n",
+             nsecs / 1000000, cpu, args->prev_comm, args->prev_pid,
+             args->next_comm, $next);
+    }
+  }
+}
+
+// 2) Hard IRQ in this thread's own context (tid == victim).
+tracepoint:irq:irq_handler_entry
+{
+  if (@target == 0) { return; }
+  if ((int64)tid != @target) { return; }
+  @n_irq++;
+  @irq_name[args->name] = count();
+  @irq_vec[args->irq] = count();
+  printf("%-12llu CPU%-2d [IRQ_ENTER] %s(tgid=%d, tid=%d) irq=%d (%s)\n",
+         nsecs / 1000000, cpu, comm, pid, tid, args->irq, args->name);
+}
+
+tracepoint:irq:irq_handler_exit
+{
+  if (@target == 0) { return; }
+  if ((int64)tid != @target) { return; }
+  printf("%-12llu CPU%-2d [IRQ_EXIT] %s(tgid=%d, tid=%d) irq=%d ret=%d\n",
+         nsecs / 1000000, cpu, comm, pid, tid, args->irq, args->ret);
+}
+
+// 3) SoftIRQ in this thread's own context.
+tracepoint:irq:softirq_entry
+{
+  if (@target == 0) { return; }
+  if ((int64)tid != @target) { return; }
+  @n_soft++;
+  @softirq_vec[args->vec] = count();
+  printf("%-12llu CPU%-2d [SOFTIRQ_ENTER] %s(tgid=%d, tid=%d) vec=%d\n",
+         nsecs / 1000000, cpu, comm, pid, tid, args->vec);
+}
+
+tracepoint:irq:softirq_exit
+{
+  if (@target == 0) { return; }
+  if ((int64)tid != @target) { return; }
+  printf("%-12llu CPU%-2d [SOFTIRQ_EXIT] %s(tgid=%d, tid=%d) vec=%d\n",
+         nsecs / 1000000, cpu, comm, pid, tid, args->vec);
+}
+
+// 4) CPU migration. Pinned thread should (almost) never print this.
+tracepoint:sched:sched_migrate_task
+{
+  if (@target == 0) { return; }
+  if ((int64)args->pid != @target) { return; }
+  @n_mig++;
+  printf("%-12llu [MIGRATE] %s(tid=%d) CPU%d -> CPU%d (pinning broken?)\n",
+         nsecs / 1000000, args->comm, args->pid, args->orig_cpu, args->dest_cpu);
+}
+
+// 5) Signal delivery to this thread.
+tracepoint:signal:signal_deliver
+{
+  if (@target == 0) { return; }
+  if ((int64)tid != @target) { return; }
+  @n_sig++;
+  @sig_num[args->sig] = count();
+  printf("%-12llu [SIGNAL] %s(tgid=%d, tid=%d) sig=%d\n",
+         nsecs / 1000000, comm, pid, tid, args->sig);
+  printf("         ustack:\n%s\n", ustack);
+}
+
+interval:s:10
+{
+  printf("\n--- [10s] total=%d matched=%d | preempted=%d voluntary=%d irq=%d softirq=%d migrate=%d signal=%d ---\n",
+         @n_sw_total, @n_sw_matched, @n_invol, @n_vol, @n_irq, @n_soft, @n_mig, @n_sig);
+  if (@n_sw_total > 0 && @n_sw_matched == 0) {
+    printf("    HINT: probe alive, filter missed. TID dead? ls /proc/<PID>/task/\n");
+  }
+}
+
+END
+{
+  printf("\n================ summary (TID=%d only) ================\n", @target);
+  printf("sched_switch total on box: %d\n", @n_sw_total);
+  printf("sched_switch matched:      %d\n", @n_sw_matched);
+  printf("preempted:   %d\n", @n_invol);
+  printf("voluntary:   %d\n", @n_vol);
+  printf("hard IRQ:    %d\n", @n_irq);
+  printf("softIRQ:     %d\n", @n_soft);
+  printf("migrations:  %d (pinned => expect 0)\n", @n_mig);
+  printf("signals:     %d\n", @n_sig);
+  printf("\n-- who stole this thread's CPU --\n"); print(@preemptor);
+  printf("\n-- hard IRQ by name --\n"); print(@irq_name);
+  printf("\n-- hard IRQ by vector --\n"); print(@irq_vec);
+  printf("\n-- softIRQ vectors (2=NET_TX 3=NET_RX 7=SCHED 8=HRTIMER 9=RCU) --\n"); print(@softirq_vec);
+  printf("\n-- signals --\n"); print(@sig_num);
+  printf("\n-- off-CPU distribution (ns) --\n"); print(@offcpu_ns);
+  clear(@offcpu_start);
+}
